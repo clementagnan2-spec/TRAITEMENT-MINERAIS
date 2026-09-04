@@ -1,19 +1,26 @@
 # Traitement des Minerais — Boîte à outils du minéralurgiste
 
-Logiciel de bureau (Windows/Linux/macOS) construit à partir du programme de
-formation *« Traitement des Minerais — De la caractérisation du gisement au
-flowsheet industriel »*.
+Logiciel de bureau (Windows/Linux/macOS) construit à partir de deux
+programmes de formation :
+
+1. *« Traitement des Minerais — De la caractérisation du gisement au
+   flowsheet industriel »* (formation de cadrage, théorique et méthodologique)
+2. *« Programme de Formation Opérationnelle — Métiers de l'Usine de
+   Traitement »* (formation opérationnelle, par poste et par circuit :
+   concassage, broyage, concentration, lixiviation, CIL/CIP, finition, HSE)
 
 ## Fonctionnalités
 
 | Onglet | Contenu |
 |---|---|
-| **Glossaire** | Recherche dans ~30 termes clés du traitement des minerais |
+| **Glossaire** | Recherche dans ~47 termes clés (théoriques + opérationnels : LOTO, CIL/CIP, ORP, heap leaching...) |
 | **Bilan matière** | Calcul du rendement massique, de la récupération métallurgique et du ratio d'enrichissement (bilan à 2 produits), avec vérification du bilan métal sur base 100 t |
 | **Granulométrie (P80)** | Interpolation d'un Pxx (ex. P80) à partir d'une courbe granulométrique saisie |
 | **Choix de méthode** | Assistant de sélection d'une méthode de concentration (gravimétrie, magnétique, électrostatique, flottation) à partir des propriétés physiques du minéral |
 | **Diagnostic flottation** | Checklist méthodique pour diagnostiquer une baisse de récupération, de l'amont vers l'aval |
-| **Quiz** | Quiz de validation des connaissances avec correction et explication |
+| **Postes & Métiers** | Fiches par circuit/poste (concassage, broyage, magnétique, gravimétrique, flottation, lixiviation tas/autoclave/cuve, CIL/CIP, finition, rôles transversaux) : contrôles de routine, paramètres à surveiller, anomalies fréquentes, missions et compétences ; filtrable par partie A à E ; tables métier → blocs recommandés et métier → compétence visée |
+| **Sécurité (HSE)** | Points de sécurité transversaux : consignation (LOTO), EPI, FDS, procédures d'urgence, culture du reporting |
+| **Quiz** | Quiz de validation des connaissances (17 questions), filtrable par catégorie : formation de cadrage, formation opérationnelle, ou les deux |
 
 ## Lancer le logiciel depuis le code source
 

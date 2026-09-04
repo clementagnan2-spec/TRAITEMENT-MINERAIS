@@ -2,17 +2,22 @@
 """
 Traitement des Minerais — Boîte à outils du minéralurgiste
 ============================================================
-Application de bureau (Tkinter) construite à partir du programme de
-formation "Traitement des Minerais — De la caractérisation du gisement
-au flowsheet industriel".
+Application de bureau (Tkinter) construite à partir de deux programmes de
+formation :
+  1. "Traitement des Minerais — De la caractérisation du gisement au
+     flowsheet industriel" (formation de cadrage)
+  2. "Programme de Formation Opérationnelle — Métiers de l'Usine de
+     Traitement" (formation opérationnelle, par poste et par circuit)
 
 Modules :
   1. Glossaire (recherche)
   2. Bilan matière / rendement / récupération (2 produits)
   3. Granulométrie — calcul de P80 (ou de tout Pxx) par interpolation
   4. Assistant de sélection d'une méthode de concentration
-  5. Checklist de diagnostic d'une baisse de récupération en flottation
-  6. Quiz de validation des connaissances
+  5. Diagnostic flottation (formation de cadrage)
+  6. Postes & Métiers — fiches de poste par circuit (opérationnel)
+  7. Sécurité (HSE) — points de sécurité transversaux
+  8. Quiz de validation des connaissances (les deux formations)
 
 Lancer avec :  python main.py
 """
@@ -21,7 +26,17 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import random
 
-from data import GLOSSAIRE, DIAGNOSTIC_FLOTTATION, QUIZ, suggerer_methode
+from data import (
+    GLOSSAIRE,
+    DIAGNOSTIC_FLOTTATION,
+    QUIZ,
+    QUIZ_OPERATIONS,
+    POSTES,
+    METIERS_BLOCS,
+    METIERS_COMPETENCES,
+    SECURITE_HSE,
+    suggerer_methode,
+)
 
 APP_TITLE = "Traitement des Minerais — Boîte à outils du minéralurgiste"
 BG = "#f4f6f5"
@@ -453,18 +468,181 @@ class OngletDiagnostic(ttk.Frame):
 
 
 # ----------------------------------------------------------------------
-# Onglet 6 — Quiz
+# Onglet 6 — Postes & Métiers (formation opérationnelle)
 # ----------------------------------------------------------------------
-class OngletQuiz(ttk.Frame):
+class OngletPostes(ttk.Frame):
+    PARTIES = ["Toutes"] + sorted({p["partie"] for p in POSTES})
+
     def __init__(self, parent):
         super().__init__(parent)
         self.configure(padding=16)
-        self.questions = list(QUIZ)
+
+        ttk.Label(self, text="Postes & Métiers de l'usine", font=FONT_TITLE).pack(anchor="w")
+        ttk.Label(
+            self,
+            text="Fiches par circuit/poste : contrôles de routine, paramètres à surveiller, "
+                 "anomalies fréquentes, missions et compétences.",
+            font=FONT_BASE,
+        ).pack(anchor="w", pady=(4, 10))
+
+        filtre_frame = ttk.Frame(self)
+        filtre_frame.pack(anchor="w", pady=(0, 10))
+        ttk.Label(filtre_frame, text="Filtrer par partie : ", font=FONT_BASE).pack(side="left")
+        self.partie_var = tk.StringVar(value="Toutes")
+        combo = ttk.Combobox(
+            filtre_frame, textvariable=self.partie_var, values=self.PARTIES,
+            state="readonly", width=28, font=FONT_BASE
+        )
+        combo.pack(side="left")
+        combo.bind("<<ComboboxSelected>>", lambda e: self._afficher())
+
+        self.container = ScrollableFrame(self)
+        self.container.pack(fill="both", expand=True)
+
+        self._afficher()
+
+    def _ligne_liste(self, parent, titre, items):
+        if not items:
+            return
+        ttk.Label(parent, text=titre, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(6, 0))
+        for item in items:
+            if isinstance(item, tuple):
+                texte = f"• {item[0]} — {item[1]}"
+            else:
+                texte = f"• {item}"
+            ttk.Label(
+                parent, text=texte, font=FONT_BASE, wraplength=740, justify="left"
+            ).pack(anchor="w", padx=(10, 0))
+
+    def _afficher(self):
+        for w in self.container.body.winfo_children():
+            w.destroy()
+
+        choix = self.partie_var.get()
+        postes = POSTES if choix == "Toutes" else [p for p in POSTES if p["partie"] == choix]
+
+        partie_courante = None
+        for poste in postes:
+            if poste["partie"] != partie_courante:
+                partie_courante = poste["partie"]
+                ttk.Label(
+                    self.container.body, text=partie_courante, font=FONT_TITLE, foreground=ACCENT
+                ).pack(anchor="w", pady=(14, 4))
+
+            bloc = ttk.Frame(self.container.body, padding=(4, 8))
+            bloc.pack(fill="x", anchor="w")
+            ttk.Label(
+                bloc, text=f"{poste['id']} — {poste['titre']}", font=FONT_H2
+            ).pack(anchor="w")
+            if poste.get("description"):
+                ttk.Label(
+                    bloc, text=poste["description"], font=FONT_BASE, wraplength=740,
+                    justify="left"
+                ).pack(anchor="w", pady=(2, 0))
+
+            self._ligne_liste(bloc, "Contrôles de routine", poste.get("controles"))
+            self._ligne_liste(bloc, "Paramètres à surveiller", poste.get("parametres"))
+            self._ligne_liste(bloc, "Anomalies fréquentes", poste.get("anomalies"))
+            self._ligne_liste(bloc, "Missions type", poste.get("missions"))
+            self._ligne_liste(bloc, "Compétences visées", poste.get("competences"))
+            self._ligne_liste(bloc, "Outils clés", poste.get("outils"))
+            self._ligne_liste(bloc, "Points de sécurité clés", poste.get("securite"))
+
+            ttk.Separator(self.container.body).pack(fill="x", pady=6)
+
+        # Tables métiers -> blocs / compétences, affichées en bas de la vue complète
+        if choix == "Toutes":
+            ttk.Label(
+                self.container.body, text="Métier / poste → blocs recommandés", font=FONT_TITLE,
+                foreground=ACCENT
+            ).pack(anchor="w", pady=(14, 4))
+            for metier, blocs in METIERS_BLOCS:
+                ttk.Label(
+                    self.container.body, text=f"• {metier} → {blocs}", font=FONT_BASE,
+                    wraplength=740, justify="left"
+                ).pack(anchor="w", padx=(10, 0), pady=1)
+
+            ttk.Label(
+                self.container.body,
+                text="Métier / poste → compétence opérationnelle visée",
+                font=FONT_TITLE, foreground=ACCENT
+            ).pack(anchor="w", pady=(14, 4))
+            for metier, comp in METIERS_COMPETENCES:
+                ttk.Label(
+                    self.container.body, text=f"• {metier} : {comp}", font=FONT_BASE,
+                    wraplength=740, justify="left"
+                ).pack(anchor="w", padx=(10, 0), pady=1)
+
+
+# ----------------------------------------------------------------------
+# Onglet 7 — Sécurité (HSE)
+# ----------------------------------------------------------------------
+class OngletSecurite(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.configure(padding=16)
+
+        ttk.Label(self, text="Sécurité et bonnes pratiques (HSE)", font=FONT_TITLE).pack(
+            anchor="w"
+        )
+        ttk.Label(
+            self,
+            text="Points de sécurité transversaux, applicables à tous les postes de l'usine.",
+            font=FONT_BASE,
+        ).pack(anchor="w", pady=(4, 14))
+
+        container = ScrollableFrame(self)
+        container.pack(fill="both", expand=True)
+
+        for titre, detail in SECURITE_HSE:
+            bloc = ttk.Frame(container.body, padding=(4, 8))
+            bloc.pack(fill="x", anchor="w")
+            ttk.Label(bloc, text=f"⚠ {titre}", font=FONT_H2, foreground="#a6371f").pack(
+                anchor="w"
+            )
+            ttk.Label(
+                bloc, text=detail, font=FONT_BASE, wraplength=740, justify="left"
+            ).pack(anchor="w", padx=(20, 0))
+            ttk.Separator(container.body).pack(fill="x", pady=4)
+
+        rappel = ttk.Frame(container.body, padding=(4, 10))
+        rappel.pack(fill="x", anchor="w")
+        ttk.Label(
+            rappel,
+            text="Ces points s'ajoutent aux consignes de sécurité spécifiques à chaque poste "
+                 "(voir l'onglet « Postes & Métiers »), en particulier pour la flottation "
+                 "(réactifs), la lixiviation (cyanure) et l'autoclave (pression).",
+            font=FONT_BASE, wraplength=740, justify="left",
+        ).pack(anchor="w")
+
+
+# ----------------------------------------------------------------------
+# Onglet 8 — Quiz
+# ----------------------------------------------------------------------
+class OngletQuiz(ttk.Frame):
+    CATEGORIES = ["Les deux formations", "Formation de cadrage", "Formation opérationnelle"]
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.configure(padding=16)
+        self.banque = list(QUIZ) + list(QUIZ_OPERATIONS)
+        self.questions = list(self.banque)
         self.index = 0
         self.score = 0
 
         self.titre = ttk.Label(self, text="Quiz de validation des connaissances", font=FONT_TITLE)
         self.titre.pack(anchor="w")
+
+        cat_frame = ttk.Frame(self)
+        cat_frame.pack(anchor="w", pady=(4, 4))
+        ttk.Label(cat_frame, text="Catégorie : ", font=FONT_BASE).pack(side="left")
+        self.categorie_var = tk.StringVar(value=self.CATEGORIES[0])
+        combo = ttk.Combobox(
+            cat_frame, textvariable=self.categorie_var, values=self.CATEGORIES,
+            state="readonly", width=26, font=FONT_BASE
+        )
+        combo.pack(side="left")
+        combo.bind("<<ComboboxSelected>>", lambda e: self._recommencer())
 
         self.progression = ttk.Label(self, text="", font=FONT_BASE)
         self.progression.pack(anchor="w", pady=(4, 14))
@@ -496,7 +674,13 @@ class OngletQuiz(ttk.Frame):
         self._recommencer()
 
     def _recommencer(self):
-        self.questions = list(QUIZ)
+        choix = self.categorie_var.get()
+        if choix == "Formation de cadrage":
+            self.questions = [q for q in self.banque if q["categorie"] == "Formation de cadrage"]
+        elif choix == "Formation opérationnelle":
+            self.questions = [q for q in self.banque if q["categorie"] == "Formation opérationnelle"]
+        else:
+            self.questions = list(self.banque)
         random.shuffle(self.questions)
         self.index = 0
         self.score = 0
@@ -523,7 +707,8 @@ class OngletQuiz(ttk.Frame):
 
         q = self.questions[self.index]
         self.progression.configure(
-            text=f"Question {self.index + 1} / {len(self.questions)}   —   Score : {self.score}"
+            text=f"Question {self.index + 1} / {len(self.questions)}   —   Score : "
+                 f"{self.score}   —   [{q['categorie']}]"
         )
         self.question_label.configure(text=q["question"])
         for i, choix in enumerate(q["choices"]):
@@ -582,8 +767,9 @@ class Application(tk.Tk):
         ttk.Label(entete, text=APP_TITLE, font=FONT_TITLE, foreground=ACCENT).pack(anchor="w")
         ttk.Label(
             entete,
-            text="Basé sur le programme de formation « Traitement des Minerais — De la "
-                 "caractérisation du gisement au flowsheet industriel »",
+            text="Basé sur « Traitement des Minerais — De la caractérisation du gisement au "
+                 "flowsheet industriel » et sur « Programme de Formation Opérationnelle — "
+                 "Métiers de l'Usine de Traitement »",
             font=FONT_BASE,
         ).pack(anchor="w")
 
@@ -595,6 +781,8 @@ class Application(tk.Tk):
         notebook.add(OngletGranulo(notebook), text="  Granulométrie (P80)  ")
         notebook.add(OngletSelection(notebook), text="  Choix de méthode  ")
         notebook.add(OngletDiagnostic(notebook), text="  Diagnostic flottation  ")
+        notebook.add(OngletPostes(notebook), text="  Postes & Métiers  ")
+        notebook.add(OngletSecurite(notebook), text="  Sécurité (HSE)  ")
         notebook.add(OngletQuiz(notebook), text="  Quiz  ")
 
 
