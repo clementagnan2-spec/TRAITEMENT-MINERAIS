@@ -8,6 +8,8 @@ d'équipe, et administration des comptes. Un onglet **Formation** conserve
 les outils pédagogiques (glossaire, quiz, calculateurs de simulation,
 fiches de poste de référence).
 
+*Développé par Tagnan Clément — clementagnan2@gmail.com*
+
 ## ⚠️ À lire avant déploiement en conditions réelles
 
 Ce logiciel est un **vrai outil fonctionnel**, testé de bout en bout
@@ -103,7 +105,9 @@ git push origin v1.0.0
 
 ```bash
 pip install -r requirements.txt
-pyinstaller --noconfirm --onefile --windowed --name GestionOperationsMine app/main.py
+pyinstaller --noconfirm --onefile --windowed --name GestionOperationsMine ^
+  --icon app/assets/icon.ico --add-data "app/assets;assets" app/main.py
+# (sous Linux/macOS, remplacez --add-data "app/assets;assets" par "app/assets:assets")
 # L'exécutable apparaît dans dist/
 ```
 
@@ -134,7 +138,10 @@ mine-ops/
 │   ├── ui_securite.py        # Consignation LOTO + checklist HSE signée
 │   ├── ui_equipes.py         # Affectations d'équipe par poste/quart
 │   ├── ui_admin.py           # Gestion des comptes utilisateurs (admin)
-│   └── formation_ui.py       # Outils de formation intégrés (glossaire, quiz, calculateurs)
+│   ├── formation_ui.py       # Outils de formation intégrés (glossaire, quiz, calculateurs)
+│   └── assets/
+│       ├── icon.ico           # Icône de l'application (lingot d'or) — fenêtre + .exe
+│       └── icon.png
 ├── .github/workflows/
 │   └── build.yml              # Compilation automatique du .exe sur GitHub Actions
 ├── requirements.txt
