@@ -79,8 +79,7 @@ class DialogueChangerMotDePasse(tk.Toplevel):
         super().__init__(parent)
         self.user = user
         self.title("Changer le mot de passe")
-        self.geometry("360x220")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.grab_set()
 
         cadre = ttk.Frame(self, padding=20)
@@ -90,19 +89,44 @@ class DialogueChangerMotDePasse(tk.Toplevel):
             ttk.Label(
                 cadre, text="Pour des raisons de sécurité, vous devez changer votre mot de "
                             "passe avant de continuer.",
-                font=FONT_BASE, wraplength=320, foreground="#a6371f"
-            ).pack(pady=(0, 10))
+                font=FONT_BASE, wraplength=340, foreground="#a6371f", justify="left"
+            ).pack(anchor="w", pady=(0, 10))
             self.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        ttk.Label(cadre, text="Nouveau mot de passe :", font=FONT_BASE).pack(anchor="w")
+        ttk.Label(cadre, text="Nouveau mot de passe (6 caractères minimum) :",
+                  font=FONT_BASE, wraplength=340, justify="left").pack(anchor="w")
         self.mdp1 = tk.StringVar()
-        ttk.Entry(cadre, textvariable=self.mdp1, show="*", font=FONT_BASE).pack(fill="x", pady=4)
+        entry1 = ttk.Entry(cadre, textvariable=self.mdp1, show="*", font=FONT_BASE)
+        entry1.pack(fill="x", pady=4)
+        entry1.bind("<Return>", lambda e: self._valider())
 
         ttk.Label(cadre, text="Confirmer le mot de passe :", font=FONT_BASE).pack(anchor="w")
         self.mdp2 = tk.StringVar()
-        ttk.Entry(cadre, textvariable=self.mdp2, show="*", font=FONT_BASE).pack(fill="x", pady=4)
+        entry2 = ttk.Entry(cadre, textvariable=self.mdp2, show="*", font=FONT_BASE)
+        entry2.pack(fill="x", pady=4)
+        entry2.bind("<Return>", lambda e: self._valider())
 
-        ttk.Button(cadre, text="Valider", command=self._valider).pack(pady=14)
+        bouton = ttk.Button(cadre, text="Valider", command=self._valider)
+        bouton.pack(pady=14)
+
+        # Taille calculée dynamiquement à partir du contenu réel (au lieu d'une
+        # taille fixe), pour ne jamais couper le bouton "Valider" — notamment
+        # avec une mise à l'échelle d'affichage Windows à 125 %/150 %.
+        self.update_idletasks()
+        largeur = max(380, cadre.winfo_reqwidth() + 40)
+        hauteur = cadre.winfo_reqheight() + 40
+        self.geometry(f"{largeur}x{hauteur}")
+        self.minsize(largeur, hauteur)
+
+        # Centrer par rapport à la fenêtre parente
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        x = px + (pw - largeur) // 2
+        y = py + (ph - hauteur) // 2
+        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+        entry1.focus_set()
 
     def _valider(self):
         m1, m2 = self.mdp1.get(), self.mdp2.get()
