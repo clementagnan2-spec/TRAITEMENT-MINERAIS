@@ -47,6 +47,50 @@ En résumé : c'est un bon point de départ solide et réellement utilisable
 pour une petite/moyenne exploitation ou un site pilote — pas encore un
 système d'entreprise critique multi-sites.
 
+## ⚠️ Windows signale l'exécutable comme virus / le supprime
+
+C'est un **faux positif très courant** avec les exécutables générés par
+PyInstaller, pas un vrai virus. Deux causes principales :
+
+1. L'ancien mode de compilation (`--onefile`) s'auto-extrait dans un
+   dossier temporaire à chaque lancement, ce qui ressemble à un
+   comportement de « dropper » aux yeux des antivirus heuristiques.
+2. L'exécutable n'est pas signé numériquement (aucun certificat éditeur
+   reconnu par Microsoft) : Windows SmartScreen se méfie par défaut de
+   tout logiciel sans réputation connue, qu'il soit malveillant ou non.
+
+**Ce projet compile maintenant en mode dossier** (`--windowed` sans
+`--onefile`), nettement moins sujet à ce faux positif, et intègre des
+métadonnées de version (éditeur, description) qui aident aussi à réduire
+le risque. Le livrable est un fichier `GestionOperationsMine-windows.zip`
+contenant un dossier avec l'exécutable et ses fichiers de support — à
+dézipper avant utilisation (ne pas lancer l'exe depuis l'intérieur du zip).
+
+Si Windows Defender le bloque quand même :
+
+- **Solution durable et gratuite** : signalez le faux positif à
+  Microsoft via
+  [https://www.microsoft.com/en-us/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission)
+  (catégorie « Logiciel que je pense sain »). Microsoft met généralement
+  à jour ses définitions sous 24 à 72 h après vérification.
+- **Solution immédiate pour votre propre déploiement interne** : ajoutez
+  une exclusion dans Windows Defender pour le dossier où se trouve
+  l'application (*Sécurité Windows → Protection contre les virus et
+  menaces → Gérer les paramètres → Ajouter ou supprimer des exclusions*).
+  À ne faire que pour un logiciel dont vous connaissez l'origine (ce
+  dépôt), jamais en général.
+- **Solution la plus robuste à terme** : faire signer l'exécutable avec
+  un certificat de signature de code (« code signing certificate »,
+  quelques dizaines à quelques centaines d'euros par an selon l'autorité
+  de certification). Un exécutable signé par un éditeur identifié bâtit
+  une réputation auprès de Windows SmartScreen au fil des téléchargements
+  et n'est presque plus jamais bloqué.
+- Le blocage peut aussi venir du **navigateur** (Chrome/Edge SmartScreen)
+  au moment du téléchargement plutôt que de l'antivirus lui-même :
+  cliquez sur « Conserver quand même » / « Autres options » → « Conserver »
+  si cette option apparaît, après vous être assuré de la provenance du
+  fichier (votre propre dépôt GitHub).
+
 ## Comptes et rôles
 
 | Rôle | Peut faire |
@@ -92,8 +136,11 @@ installation locale :
 2. Onglet **Actions** du dépôt → le workflow se lance automatiquement
    (ou via *Run workflow*).
 3. Une fois terminé (✅), téléchargez l'artefact
-   **`GestionOperationsMine-exe`** → il contient
-   `GestionOperationsMine.exe`.
+   **`GestionOperationsMine-windows`** → à l'intérieur se trouve
+   `GestionOperationsMine-windows.zip`. **Dézippez-le entièrement** dans
+   un dossier (ne lancez jamais l'exe depuis l'intérieur d'un zip
+   ouvert), puis lancez `GestionOperationsMine.exe` — il a besoin des
+   fichiers du sous-dossier `_internal` à côté de lui pour fonctionner.
 
 Pour une release téléchargeable stable, poussez un tag :
 ```bash
@@ -105,10 +152,13 @@ git push origin v1.0.0
 
 ```bash
 pip install -r requirements.txt
-pyinstaller --noconfirm --onefile --windowed --name GestionOperationsMine ^
-  --icon app/assets/icon.ico --add-data "app/assets;assets" app/main.py
-# (sous Linux/macOS, remplacez --add-data "app/assets;assets" par "app/assets:assets")
-# L'exécutable apparaît dans dist/
+pyinstaller --noconfirm --windowed --name GestionOperationsMine ^
+  --icon app/assets/icon.ico --add-data "app/assets;assets" ^
+  --version-file version_info.txt app/main.py
+# (sous Linux/macOS, remplacez --add-data "app/assets;assets" par "app/assets:assets"
+# et retirez --version-file, spécifique à Windows)
+# Le résultat apparaît dans dist/GestionOperationsMine/ (dossier complet, pas un fichier
+# unique) — c'est volontaire, voir la section sur les faux positifs antivirus ci-dessus.
 ```
 
 ## Déploiement multi-postes (plusieurs opérateurs, plusieurs ordinateurs)

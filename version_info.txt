@@ -1,0 +1,34 @@
+# UTF-8
+#
+# Informations de version intégrées dans l'exécutable Windows (métadonnées
+# visibles dans les propriétés du fichier). Une identité claire et cohérente
+# réduit le risque de faux positif antivirus par rapport à un exécutable
+# totalement anonyme.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040c04b0',
+        [StringStruct(u'CompanyName', u'Tagnan Clement'),
+        StringStruct(u'FileDescription', u'Gestion des operations - Usine de traitement des minerais (usage formation)'),
+        StringStruct(u'FileVersion', u'1.0.0.0'),
+        StringStruct(u'InternalName', u'GestionOperationsMine'),
+        StringStruct(u'LegalCopyright', u'Tagnan Clement - clementagnan2@gmail.com'),
+        StringStruct(u'OriginalFilename', u'GestionOperationsMine.exe'),
+        StringStruct(u'ProductName', u'Gestion des Operations - Usine de Traitement des Minerais'),
+        StringStruct(u'ProductVersion', u'1.0.0.0')])
+      ]),
+    VarFileInfo([VarStruct(u'Translation', [1036, 1200])])
+  ]
+)
