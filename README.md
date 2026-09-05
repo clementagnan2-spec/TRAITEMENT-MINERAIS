@@ -1,100 +1,154 @@
-# Traitement des Minerais — Boîte à outils du minéralurgiste
+# Gestion des opérations — Usine de traitement des minerais
 
-Logiciel de bureau (Windows/Linux/macOS) construit à partir de deux
-programmes de formation :
+Application de bureau pour la gestion réelle des opérations d'une usine de
+traitement de minerais : comptes utilisateurs avec rôles, relevés
+d'exploitation, productions réelles avec bilan matière calculé, incidents,
+sécurité (consignation LOTO + checklists HSE signées), affectations
+d'équipe, et administration des comptes. Un onglet **Formation** conserve
+les outils pédagogiques (glossaire, quiz, calculateurs de simulation,
+fiches de poste de référence).
 
-1. *« Traitement des Minerais — De la caractérisation du gisement au
-   flowsheet industriel »* (formation de cadrage, théorique et méthodologique)
-2. *« Programme de Formation Opérationnelle — Métiers de l'Usine de
-   Traitement »* (formation opérationnelle, par poste et par circuit :
-   concassage, broyage, concentration, lixiviation, CIL/CIP, finition, HSE)
+## ⚠️ À lire avant déploiement en conditions réelles
 
-## Fonctionnalités
+Ce logiciel est un **vrai outil fonctionnel**, testé de bout en bout
+(connexion, saisie, calculs, persistance des données). Mais avant de vous
+en servir pour piloter une exploitation réelle, ayez ces limites en tête :
 
-| Onglet | Contenu |
+- **Base de données** : SQLite, un simple fichier local
+  (`app/mine_ops.sqlite3`). Très bien pour un poste unique ou un petit
+  nombre de postes partageant un dossier réseau à faible fréquence
+  d'écriture simultanée. **Pas conçu pour de nombreux utilisateurs
+  écrivant en même temps** (dizaines de postes simultanés) : dans ce cas,
+  migrez vers un serveur de base de données dédié (PostgreSQL par
+  exemple) — le code est structuré pour rendre cette migration réalisable
+  sans tout réécrire (toutes les requêtes passent par `app/db.py`).
+- **Sauvegardes** : le fichier `.sqlite3` contient TOUTES vos données de
+  production, incidents, LOTO, etc. Il n'est **pas** suivi par Git
+  (volontairement, voir `.gitignore`). Mettez en place une sauvegarde
+  régulière de ce fichier (copie automatisée vers un autre disque/serveur)
+  — sans quoi une panne disque fait perdre l'historique.
+- **Authentification** : mots de passe hachés (SHA-256 salé), correct pour
+  un usage interne sur un réseau de confiance, mais **ce n'est pas un
+  système d'authentification durci** pour une exposition sur Internet.
+  N'exposez pas cette application directement sur Internet sans un VPN ou
+  une passerelle sécurisée en amont.
+- **Pas d'intégration capteurs/SCADA** : les relevés et productions sont
+  saisis manuellement par les opérateurs. Une intégration avec des
+  capteurs ou un système SCADA existant est un projet à part, non couvert
+  ici.
+- **Conformité réglementaire** : les modules sécurité (LOTO, HSE) sont des
+  outils d'aide à la traçabilité, pas un système certifié conforme à une
+  réglementation minière spécifique (qui varie par pays). Faites valider
+  le processus par votre responsable HSE avant un déploiement officiel.
+
+En résumé : c'est un bon point de départ solide et réellement utilisable
+pour une petite/moyenne exploitation ou un site pilote — pas encore un
+système d'entreprise critique multi-sites.
+
+## Comptes et rôles
+
+| Rôle | Peut faire |
 |---|---|
-| **Glossaire** | Recherche dans ~47 termes clés (théoriques + opérationnels : LOTO, CIL/CIP, ORP, heap leaching...) |
-| **Bilan matière** | Calcul du rendement massique, de la récupération métallurgique et du ratio d'enrichissement (bilan à 2 produits), avec vérification du bilan métal sur base 100 t |
-| **Granulométrie (P80)** | Interpolation d'un Pxx (ex. P80) à partir d'une courbe granulométrique saisie |
-| **Choix de méthode** | Assistant de sélection d'une méthode de concentration (gravimétrie, magnétique, électrostatique, flottation) à partir des propriétés physiques du minéral |
-| **Diagnostic flottation** | Checklist méthodique pour diagnostiquer une baisse de récupération, de l'amont vers l'aval |
-| **Postes & Métiers** | Fiches par circuit/poste (concassage, broyage, magnétique, gravimétrique, flottation, lixiviation tas/autoclave/cuve, CIL/CIP, finition, rôles transversaux) : contrôles de routine, paramètres à surveiller, anomalies fréquentes, missions et compétences ; filtrable par partie A à E ; tables métier → blocs recommandés et métier → compétence visée |
-| **Sécurité (HSE)** | Points de sécurité transversaux : consignation (LOTO), EPI, FDS, procédures d'urgence, culture du reporting |
-| **Quiz** | Quiz de validation des connaissances (17 questions), filtrable par catégorie : formation de cadrage, formation opérationnelle, ou les deux |
+| **Opérateur** | Saisir des relevés, déclarer des incidents, verrouiller/déverrouiller des équipements (LOTO), signer des checklists HSE, consulter le tableau de bord et la formation |
+| **Chef de poste** | Tout ce que fait l'opérateur, + saisir les productions réelles et consulter le bilan matière, + résoudre des incidents, + gérer les affectations d'équipe |
+| **Superviseur** | Mêmes droits que chef de poste (vision multi-équipes) |
+| **Administrateur** | Tout ce qui précède, + créer/désactiver des comptes utilisateurs |
 
-## Lancer le logiciel depuis le code source
+**Compte par défaut à la première utilisation** : `admin` / `admin123`
+— changez ce mot de passe immédiatement (l'application vous y oblige dès
+la première connexion), puis créez un compte pour chaque collaborateur
+depuis l'onglet **Administration**.
 
-Prérequis : Python 3.9+ (Tkinter est inclus dans l'installateur standard de
-Python sous Windows ; sous Linux, installez le paquet `python3-tk` si besoin).
+## Lancer depuis le code source
 
 ```bash
 git clone <url-de-ce-depot>
-cd traitement-minerais
+cd mine-ops
 python app/main.py
 ```
 
+Prérequis : Python 3.9+ (Tkinter inclus dans l'installateur standard
+Windows ; sous Linux, `sudo apt install python3-tk` si besoin). Aucune
+dépendance externe n'est nécessaire pour l'exécution (SQLite est inclus
+dans Python) — `requirements.txt` ne sert qu'à la compilation en `.exe`.
+
 ## Obtenir le fichier .exe (compilation automatique sur GitHub)
 
-Ce dépôt contient un workflow **GitHub Actions**
-(`.github/workflows/build.yml`) qui compile automatiquement l'application en
-`.exe` Windows avec PyInstaller, **sans que vous ayez besoin d'une machine
-Windows ni d'installer quoi que ce soit localement** :
+Un workflow **GitHub Actions** (`.github/workflows/build.yml`) compile
+automatiquement l'application en `.exe` Windows, sans machine Windows ni
+installation locale :
 
-1. Créez un dépôt GitHub et poussez le contenu de ce dossier dedans :
+1. Poussez ce dossier sur un dépôt GitHub :
    ```bash
    git init
    git add .
-   git commit -m "Traitement des Minerais - boîte à outils"
+   git commit -m "Gestion des opérations - usine de traitement"
    git branch -M main
    git remote add origin https://github.com/<votre-compte>/<votre-depot>.git
    git push -u origin main
    ```
-2. Sur GitHub, ouvrez l'onglet **Actions** du dépôt : le workflow
-   « Compiler le .exe (Windows) » se lance automatiquement à chaque `push`
-   sur `main` (il peut aussi être relancé manuellement via le bouton
-   *Run workflow*).
-3. Une fois le workflow terminé (icône verte ✅), ouvrez le run correspondant
-   puis téléchargez l'artefact **`TraitementMinerais-exe`** : il contient
-   `TraitementMinerais.exe`, prêt à l'emploi sur Windows.
+2. Onglet **Actions** du dépôt → le workflow se lance automatiquement
+   (ou via *Run workflow*).
+3. Une fois terminé (✅), téléchargez l'artefact
+   **`GestionOperationsMine-exe`** → il contient
+   `GestionOperationsMine.exe`.
 
-### Publier une release téléchargeable (optionnel)
-
-Si vous créez et poussez un tag de version, par exemple :
-
+Pour une release téléchargeable stable, poussez un tag :
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-le workflow joint automatiquement `TraitementMinerais.exe` à une **Release
-GitHub**, ce qui donne un lien de téléchargement stable et permanent pour vos
-utilisateurs (page *Releases* du dépôt).
-
 ## Compiler soi-même en local (alternatif)
 
 ```bash
 pip install -r requirements.txt
-pyinstaller --noconfirm --onefile --windowed --name TraitementMinerais app/main.py
+pyinstaller --noconfirm --onefile --windowed --name GestionOperationsMine app/main.py
 # L'exécutable apparaît dans dist/
 ```
+
+## Déploiement multi-postes (plusieurs opérateurs, plusieurs ordinateurs)
+
+Solution simple sans serveur dédié : placez `GestionOperationsMine.exe` et
+le fichier `mine_ops.sqlite3` sur un **dossier réseau partagé**, et faites
+pointer chaque poste vers ce même dossier (raccourci vers l'exécutable
+placé dans le dossier partagé, ou copie de l'exe sur chaque poste avec le
+`.sqlite3` sur le partage réseau). Convient à une poignée de postes
+écrivant occasionnellement. Pour un usage plus intensif, migrez vers un
+serveur PostgreSQL (voir l'avertissement de portée ci-dessus).
 
 ## Structure du projet
 
 ```
-traitement-minerais/
+mine-ops/
 ├── app/
-│   ├── main.py        # Interface graphique (Tkinter) et logique de l'appli
-│   └── data.py         # Glossaire, quiz, checklist, règles métier
+│   ├── main.py            # Point d'entrée, assemble l'application
+│   ├── db.py                # Accès base de données (SQLite) — toute la logique de persistance
+│   ├── data_postes.py       # Référentiel des postes/circuits (à adapter à votre flowsheet réel)
+│   ├── data_formation.py    # Contenu pédagogique (glossaire, quiz, fiches de poste de référence)
+│   ├── ui_login.py           # Écran de connexion, changement de mot de passe
+│   ├── ui_dashboard.py       # Tableau de bord (KPIs du jour)
+│   ├── ui_releves.py         # Saisie des relevés de paramètres réels
+│   ├── ui_productions.py     # Saisie de production réelle + bilan matière calculé
+│   ├── ui_incidents.py       # Journal des incidents/anomalies
+│   ├── ui_securite.py        # Consignation LOTO + checklist HSE signée
+│   ├── ui_equipes.py         # Affectations d'équipe par poste/quart
+│   ├── ui_admin.py           # Gestion des comptes utilisateurs (admin)
+│   └── formation_ui.py       # Outils de formation intégrés (glossaire, quiz, calculateurs)
 ├── .github/workflows/
-│   └── build.yml        # Compilation automatique du .exe sur GitHub Actions
+│   └── build.yml              # Compilation automatique du .exe sur GitHub Actions
 ├── requirements.txt
 └── README.md
 ```
 
-## Contenu pédagogique source
+## Adapter à votre usine réelle
 
-Les formules, la checklist de diagnostic et les questions de quiz sont
-directement issues du programme de formation fourni (modules 1 à 7 :
-caractérisation, fragmentation/classification, méthodes de concentration
-physique, flottation, séparation solide-liquide, bilans et indicateurs,
-optimisation du procédé).
+- **Postes/circuits** : modifiez `app/data_postes.py` pour refléter
+  exactement votre flowsheet (ajoutez/retirez des circuits, ajustez les
+  paramètres proposés dans les formulaires de relevé).
+- **Rôles** : si votre organisation a d'autres intitulés de poste,
+  adaptez `ROLES` / `ROLES_LABELS` dans `app/db.py` (contrainte SQL) et
+  `app/ui_admin.py` / `app/main.py` (interface).
+- **Contenu de formation** : `app/data_formation.py` reprend le contenu
+  des deux programmes de formation fournis précédemment ; à mettre à jour
+  librement.
