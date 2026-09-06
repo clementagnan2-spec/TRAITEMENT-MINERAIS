@@ -5,6 +5,7 @@ fenêtre principale ou boîtes de dialogue secondaires (Toplevel)."""
 
 import os
 import sys
+import traceback
 import tkinter as tk
 
 # Référence conservée pour empêcher le garbage collector de libérer les
@@ -23,31 +24,71 @@ def resource_path(chemin_relatif):
     return os.path.join(base, chemin_relatif)
 
 
+def _chemin_log():
+    """Fichier journal placé à côté de l'exécutable (ou du script), pour
+    diagnostiquer précisément ce qui se passe lors du chargement de
+    l'icône sur la machine de l'utilisateur."""
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, "icon_debug.log")
+
+
+def _log(lignes):
+    try:
+        with open(_chemin_log(), "a", encoding="utf-8") as f:
+            f.write("\n".join(lignes) + "\n" + ("-" * 60) + "\n")
+    except Exception:
+        pass  # le diagnostic ne doit jamais faire planter l'appli
+
+
 def appliquer_icone(fenetre):
     """Applique l'icône de l'application à la fenêtre donnée (Tk ou
-    Toplevel). Essaie d'abord le .ico (nécessaire pour un rendu correct
-    dans la barre des tâches Windows), puis retombe sur le .png
-    (multiplateforme) si le .ico échoue ou n'est pas supporté (cas normal
-    sous Linux/macOS)."""
+    Toplevel), et journalise chaque étape dans icon_debug.log à côté de
+    l'exécutable pour pouvoir diagnostiquer un éventuel échec silencieux."""
     ico_path = resource_path(os.path.join("assets", "icon.ico"))
     png_path = resource_path(os.path.join("assets", "icon.png"))
+
+    lignes = [
+        f"appliquer_icone() sur {fenetre}",
+        f"  sys.frozen = {getattr(sys, 'frozen', False)}",
+        f"  sys._MEIPASS = {getattr(sys, '_MEIPASS', '(non défini)')}",
+        f"  ico_path = {ico_path}",
+        f"  ico_path existe = {os.path.exists(ico_path)}",
+        f"  png_path = {png_path}",
+        f"  png_path existe = {os.path.exists(png_path)}",
+    ]
 
     icone_appliquee = False
 
     if os.path.exists(ico_path):
         try:
             fenetre.iconbitmap(ico_path)
+            lignes.append("  iconbitmap(ico_path) : SUCCÈS")
             icone_appliquee = True
-        except tk.TclError:
-            pass
+        except Exception as e:
+            lignes.append(f"  iconbitmap(ico_path) : ÉCHEC — {type(e).__name__}: {e}")
+            lignes.append("  " + traceback.format_exc().replace("\n", "\n  "))
+    else:
+        lignes.append("  iconbitmap non tenté : fichier .ico introuvable")
 
     if os.path.exists(png_path):
         try:
             img = tk.PhotoImage(file=png_path)
             _IMAGES_ICONES.append(img)  # garder une référence vivante
             fenetre.iconphoto(True, img)
+            lignes.append("  iconphoto(png_path) : SUCCÈS")
             icone_appliquee = True
-        except tk.TclError:
-            pass
+        except Exception as e:
+            lignes.append(f"  iconphoto(png_path) : ÉCHEC — {type(e).__name__}: {e}")
+            lignes.append("  " + traceback.format_exc().replace("\n", "\n  "))
+    else:
+        lignes.append("  iconphoto non tenté : fichier .png introuvable")
+
+    resultat_texte = "icône appliquée" if icone_appliquee else "AUCUNE icône appliquée"
+    lignes.append(f"  RÉSULTAT FINAL : {resultat_texte}")
+    _log(lignes)
 
     return icone_appliquee
+
