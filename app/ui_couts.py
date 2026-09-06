@@ -4,14 +4,16 @@
 Réalise la liaison :
     Processus industriel (poste) -> Centre de coût -> Mouvement matière
     (productions déjà saisies dans l'onglet Production & bilan matière)
-    -> Coût de production -> Écriture comptable.
+    -> Coût de production -> Écriture comptable (plan comptable SYSCOHADA).
 
 Les charges (matière, énergie, réactifs, main-d'œuvre, maintenance) sont
-saisies ici par poste. Le coût de revient est calculé en rapportant le
-total des charges d'une période à la masse du flux de sortie choisi (issu
-du bilan matière déjà calculé dans l'onglet Production). L'écriture
-comptable générée fige ce calcul (montant, centre de coût, compte de
-charge, coût unitaire) pour traçabilité.
+saisies ici par poste ; chacune est automatiquement rattachée à un compte
+SYSCOHADA de la classe 6 (voir data_plan_comptable.py). Le coût de revient
+est calculé en rapportant le total des charges d'une période à la masse du
+flux de sortie choisi (issu du bilan matière déjà calculé dans l'onglet
+Production). L'écriture comptable générée valorise ce coût dans le compte
+de stock/en-cours (classe 3) du poste, en contrepartie du compte 736
+"Variation des stocks de biens et de services produits".
 """
 
 import tkinter as tk
@@ -31,6 +33,43 @@ CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Main
 TYPES_FLUX = ["Alimentation", "Concentré", "Stérile / rejet", "Produit fini"]
 
 
+def _rendre_defilant(parent):
+    """Enveloppe le contenu d'un onglet dans un canvas avec ascenseur
+    vertical, pour que rien ne soit coupé quel que soit le nombre de
+    sections ou la taille de la fenêtre."""
+    conteneur = ttk.Frame(parent)
+    conteneur.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(conteneur, highlightthickness=0, bg="#f4f6f5")
+    scrollbar = ttk.Scrollbar(conteneur, orient="vertical", command=canvas.yview)
+    interieur = ttk.Frame(canvas, padding=12)
+
+    interieur.bind(
+        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    fenetre_id = canvas.create_window((0, 0), window=interieur, anchor="nw")
+    canvas.bind(
+        "<Configure>", lambda e: canvas.itemconfig(fenetre_id, width=e.width)
+    )
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    def _molette(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _activer_molette(_event):
+        canvas.bind_all("<MouseWheel>", _molette)
+
+    def _desactiver_molette(_event):
+        canvas.unbind_all("<MouseWheel>")
+
+    canvas.bind("<Enter>", _activer_molette)
+    canvas.bind("<Leave>", _desactiver_molette)
+    return interieur
+
+
 class OngletCoutsExploitation(ttk.Frame):
     def __init__(self, parent, current_user):
         super().__init__(parent, padding=16)
@@ -42,9 +81,9 @@ class OngletCoutsExploitation(ttk.Frame):
         ttk.Label(
             self,
             text="Chaque poste est relié à un centre de coût. Saisissez ici les charges "
-                 "(matière, énergie, réactifs, main-d'œuvre, maintenance) par poste, puis "
-                 "calculez le coût de revient sur une période à partir du bilan matière et "
-                 "générez l'écriture comptable correspondante.",
+                 "(matière, énergie, réactifs, main-d'œuvre, maintenance) par poste — chacune "
+                 "est rattachée automatiquement à un compte du plan comptable SYSCOHADA — puis "
+                 "calculez le coût de revient sur une période et générez l'écriture comptable.",
             font=FONT_BASE, wraplength=860,
         ).pack(anchor="w", pady=(2, 14))
 
@@ -59,29 +98,34 @@ class OngletCoutsExploitation(ttk.Frame):
     # Sous-onglet : référentiel des centres de coût
     # -----------------------------------------------------------------
     def _onglet_referentiel(self, notebook):
-        frame = ttk.Frame(notebook, padding=12)
-        notebook.add(frame, text="Référentiel des centres de coût")
+        page = ttk.Frame(notebook)
+        notebook.add(page, text="Référentiel des centres de coût")
+        frame = _rendre_defilant(page)
 
-        cols = ("poste_id", "poste_titre", "code_centre", "compte_charge", "stock_entree",
-                "stock_sortie", "methode_cout")
+        cols = ("poste_id", "poste_titre", "code_centre", "stock_entree", "stock_sortie",
+                "compte_stock_sortie", "methode_cout")
         tree = ttk.Treeview(frame, columns=cols, show="headings", height=14)
-        largeurs = (60, 170, 90, 150, 110, 130, 90)
+        largeurs = (60, 170, 90, 110, 130, 230, 90)
         for c, w in zip(cols, largeurs):
             tree.heading(c, text=c.replace("_", " ").capitalize())
             tree.column(c, width=w, anchor="w")
         tree.pack(fill="both", expand=True)
 
+        from data_plan_comptable import compte_stock
         for c in db.lister_centres_cout():
-            tree.insert("", "end", values=(c["poste_id"], c["poste_titre"], c["code_centre"],
-                                            c["compte_charge"], c["stock_entree"],
-                                            c["stock_sortie"], c["methode_cout"]))
+            cs = compte_stock(c["stock_sortie"])
+            tree.insert("", "end", values=(
+                c["poste_id"], c["poste_titre"], c["code_centre"], c["stock_entree"],
+                c["stock_sortie"], f"{cs['numero']} — {cs['libelle']}", c["methode_cout"]
+            ))
 
     # -----------------------------------------------------------------
     # Sous-onglet : saisie des charges
     # -----------------------------------------------------------------
     def _onglet_saisie(self, notebook):
-        frame = ttk.Frame(notebook, padding=12)
-        notebook.add(frame, text="Saisie des charges")
+        page = ttk.Frame(notebook)
+        notebook.add(page, text="Saisie des charges")
+        frame = _rendre_defilant(page)
 
         form = ttk.LabelFrame(frame, text="Nouvelle charge d'exploitation", padding=12)
         form.pack(fill="x")
@@ -99,10 +143,24 @@ class OngletCoutsExploitation(ttk.Frame):
             row=1, column=0, sticky="w", padx=(0, 8), pady=4
         )
         self.categorie_var = tk.StringVar(value=CATEGORIES_CHARGE[0])
-        ttk.Combobox(
+        categorie_combo = ttk.Combobox(
             form, textvariable=self.categorie_var, state="readonly", width=20, font=FONT_BASE,
             values=CATEGORIES_CHARGE
-        ).grid(row=1, column=1, pady=4, sticky="w")
+        )
+        categorie_combo.grid(row=1, column=1, pady=4, sticky="w")
+
+        self.compte_apercu_var = tk.StringVar()
+        ttk.Label(form, textvariable=self.compte_apercu_var, font=FONT_BASE,
+                  foreground="#666666").grid(row=1, column=2, sticky="w", padx=(12, 0))
+
+        from data_plan_comptable import compte_charge
+
+        def _maj_apercu_compte(*_):
+            cpt = compte_charge(self.categorie_var.get())
+            self.compte_apercu_var.set(f"→ compte {cpt['numero']} ({cpt['libelle']})")
+
+        self.categorie_var.trace_add("write", _maj_apercu_compte)
+        _maj_apercu_compte()
 
         ttk.Label(form, text="Montant (FCFA) :", font=FONT_BASE).grid(
             row=2, column=0, sticky="w", padx=(0, 8), pady=4
@@ -126,10 +184,10 @@ class OngletCoutsExploitation(ttk.Frame):
         ttk.Label(frame, text="Dernières charges saisies", font=FONT_H2).pack(
             anchor="w", pady=(14, 4)
         )
-        cols = ("horodatage", "poste_titre", "categorie", "montant", "nom_complet",
-                "commentaire")
+        cols = ("horodatage", "poste_titre", "categorie", "compte_num", "montant",
+                "nom_complet")
         self.tree_charges = ttk.Treeview(frame, columns=cols, show="headings", height=8)
-        for c, w in zip(cols, (140, 170, 100, 100, 140, 200)):
+        for c, w in zip(cols, (140, 160, 90, 80, 100, 140)):
             self.tree_charges.heading(c, text=c.replace("_", " ").capitalize())
             self.tree_charges.column(c, width=w, anchor="w")
         self.tree_charges.pack(fill="both", expand=True)
@@ -163,16 +221,17 @@ class OngletCoutsExploitation(ttk.Frame):
         for c in db.lister_charges(limite=100):
             self.tree_charges.insert(
                 "", "end",
-                values=(c["horodatage"], c["poste_titre"], c["categorie"],
-                        f"{c['montant']:.0f}", c["nom_complet"], c["commentaire"] or "")
+                values=(c["horodatage"], c["poste_titre"], c["categorie"], c["compte_num"],
+                        f"{c['montant']:.0f}", c["nom_complet"])
             )
 
     # -----------------------------------------------------------------
     # Sous-onglet : coût de revient & écriture comptable
     # -----------------------------------------------------------------
     def _onglet_calcul(self, notebook):
-        frame = ttk.Frame(notebook, padding=12)
-        notebook.add(frame, text="Coût de revient & écriture comptable")
+        page = ttk.Frame(notebook)
+        notebook.add(page, text="Coût de revient & écriture comptable")
+        frame = _rendre_defilant(page)
 
         periode_frame = ttk.LabelFrame(frame, text="Période de calcul", padding=12)
         periode_frame.pack(fill="x")
@@ -200,7 +259,7 @@ class OngletCoutsExploitation(ttk.Frame):
         )
 
         self.resultat = tk.Text(
-            frame, height=11, font=FONT_MONO, bg="#ffffff", relief="solid", borderwidth=1
+            frame, height=13, font=FONT_MONO, bg="#ffffff", relief="solid", borderwidth=1
         )
         self.resultat.pack(fill="both", expand=True, pady=(10, 10))
         self.resultat.configure(state="disabled")
@@ -221,13 +280,22 @@ class OngletCoutsExploitation(ttk.Frame):
         ttk.Button(generer_frame, text="Générer l'écriture comptable",
                    command=self._generer_ecriture).grid(row=0, column=2, padx=(16, 0))
 
-        ttk.Label(frame, text="Écritures comptables générées", font=FONT_H2).pack(
+        ttk.Label(frame, text="Dernière écriture générée (détail des lignes)", font=FONT_H2).pack(
             anchor="w", pady=(14, 4)
         )
-        cols = ("horodatage", "poste_titre", "code_centre", "compte_charge", "montant_total",
-                "flux_reference", "masse_reference_t", "cout_unitaire_t")
+        self.detail_ecriture = tk.Text(
+            frame, height=8, font=FONT_MONO, bg="#ffffff", relief="solid", borderwidth=1
+        )
+        self.detail_ecriture.pack(fill="both", expand=True)
+        self.detail_ecriture.configure(state="disabled")
+
+        ttk.Label(frame, text="Historique des écritures comptables", font=FONT_H2).pack(
+            anchor="w", pady=(14, 4)
+        )
+        cols = ("horodatage", "poste_titre", "code_centre", "montant_total", "flux_reference",
+                "masse_reference_t", "cout_unitaire_t", "compte_stock_num")
         self.tree_ecritures = ttk.Treeview(frame, columns=cols, show="headings", height=7)
-        largeurs = (140, 160, 80, 140, 110, 100, 110, 110)
+        largeurs = (140, 150, 80, 110, 100, 100, 100, 100)
         for c, w in zip(cols, largeurs):
             self.tree_ecritures.heading(c, text=c.replace("_", " ").capitalize())
             self.tree_ecritures.column(c, width=w, anchor="w")
@@ -240,6 +308,12 @@ class OngletCoutsExploitation(ttk.Frame):
         self.resultat.delete("1.0", "end")
         self.resultat.insert("end", texte)
         self.resultat.configure(state="disabled")
+
+    def _ecrire_detail_ecriture(self, texte):
+        self.detail_ecriture.configure(state="normal")
+        self.detail_ecriture.delete("1.0", "end")
+        self.detail_ecriture.insert("end", texte)
+        self.detail_ecriture.configure(state="disabled")
 
     def _calculer_cout(self):
         if not self.calc_poste_var.get():
@@ -261,15 +335,17 @@ class OngletCoutsExploitation(ttk.Frame):
 
         lignes = [
             f"COÛT DE PRODUCTION — {self.calc_poste_var.get()}",
-            f"Centre de coût : {centre['code_centre']}   —   Compte de charge : "
-            f"{centre['compte_charge']}",
+            f"Centre de coût : {centre['code_centre']}",
             f"Depuis le {date_debut}\n",
-            "Charges par catégorie :",
+            "Charges par compte SYSCOHADA :",
         ]
-        if not cout["par_categorie"]:
+        if not cout["par_compte"]:
             lignes.append("  (aucune charge saisie sur cette période)")
-        for categorie, montant in cout["par_categorie"].items():
-            lignes.append(f"  {categorie:<14} {montant:14,.0f} FCFA".replace(",", " "))
+        for (compte_num, compte_libelle), montant in cout["par_compte"].items():
+            lignes.append(
+                f"  {compte_num:<6} {compte_libelle:<55} {montant:14,.0f} FCFA"
+                .replace(",", " ")
+            )
         lignes.append(f"\nCoût total du centre {centre['code_centre']} : "
                        f"{cout['total']:,.0f} FCFA".replace(",", " "))
 
@@ -319,6 +395,17 @@ class OngletCoutsExploitation(ttk.Frame):
         )
         self._rafraichir_ecritures()
 
+        lignes_txt = [
+            f"ÉCRITURE COMPTABLE #{resultat['ecriture_id']} — {resultat['code_centre']}",
+            f"{'Sens':<8}{'Compte':<8}{'Libellé':<55}{'Montant':>14}", "-" * 90,
+        ]
+        for sens, compte_num, compte_libelle, libelle_ligne, montant in resultat["lignes"]:
+            lignes_txt.append(
+                f"{sens:<8}{compte_num:<8}{compte_libelle:<55}{montant:14,.0f}"
+                .replace(",", " ")
+            )
+        self._ecrire_detail_ecriture("\n".join(lignes_txt))
+
         detail_unitaire = (
             f"{resultat['cout_unitaire_t']:.2f} FCFA/t (sur {resultat['masse_reference_t']:.2f} t)"
             if resultat["cout_unitaire_t"] is not None
@@ -326,10 +413,11 @@ class OngletCoutsExploitation(ttk.Frame):
         )
         messagebox.showinfo(
             "Écriture générée",
-            f"Écriture comptable enregistrée pour {resultat['code_centre']} "
-            f"({resultat['compte_charge']}) :\n"
+            f"Écriture comptable #{resultat['ecriture_id']} enregistrée pour "
+            f"{resultat['code_centre']} :\n"
             f"Montant total : {resultat['total']:.0f} FCFA\n"
-            f"Coût unitaire : {detail_unitaire}"
+            f"Coût unitaire : {detail_unitaire}\n\n"
+            f"Le détail des lignes (comptes SYSCOHADA) est affiché ci-dessous."
         )
 
     def _rafraichir_ecritures(self):
@@ -339,10 +427,11 @@ class OngletCoutsExploitation(ttk.Frame):
             self.tree_ecritures.insert(
                 "", "end",
                 values=(
-                    e["horodatage"], e["poste_titre"], e["code_centre"], e["compte_charge"],
+                    e["horodatage"], e["poste_titre"], e["code_centre"],
                     f"{e['montant_total']:.0f}", e["flux_reference"] or "",
                     f"{e['masse_reference_t']:.2f}" if e["masse_reference_t"] is not None
                     else "",
                     f"{e['cout_unitaire_t']:.2f}" if e["cout_unitaire_t"] is not None else "",
+                    e["compte_stock_num"] or "",
                 )
             )

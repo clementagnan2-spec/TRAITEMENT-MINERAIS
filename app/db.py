@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS charges_exploitation (
     categorie TEXT NOT NULL CHECK (categorie IN
         ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Autre')),
     montant REAL NOT NULL,
+    compte_num TEXT,
+    compte_libelle TEXT,
     commentaire TEXT
 );
 
@@ -171,12 +173,23 @@ CREATE TABLE IF NOT EXISTS ecritures_comptables (
     date_debut TEXT NOT NULL,
     date_fin TEXT,
     code_centre TEXT NOT NULL,
-    compte_charge TEXT NOT NULL,
     montant_total REAL NOT NULL,
     flux_reference TEXT,
     masse_reference_t REAL,
     cout_unitaire_t REAL,
+    compte_stock_num TEXT,
+    compte_stock_libelle TEXT,
     commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ecritures_comptables_lignes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ecriture_id INTEGER NOT NULL REFERENCES ecritures_comptables(id),
+    sens TEXT NOT NULL CHECK (sens IN ('Débit','Crédit')),
+    compte_num TEXT NOT NULL,
+    compte_libelle TEXT NOT NULL,
+    libelle_ligne TEXT,
+    montant REAL NOT NULL
 );
 """
 
@@ -637,11 +650,14 @@ def obtenir_centre_cout(poste_id):
 
 
 def ajouter_charge(poste_id, user_id, categorie, montant, commentaire):
+    from data_plan_comptable import compte_charge
+    compte = compte_charge(categorie)
     conn = get_connection()
     conn.execute(
         "INSERT INTO charges_exploitation (poste_id, user_id, horodatage, categorie, "
-        "montant, commentaire) VALUES (?,?,?,?,?,?)",
-        (poste_id, user_id, now_iso(), categorie, montant, commentaire),
+        "montant, compte_num, compte_libelle, commentaire) VALUES (?,?,?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), categorie, montant, compte["numero"],
+         compte["libelle"], commentaire),
     )
     conn.commit()
     conn.close()
@@ -674,16 +690,23 @@ def lister_charges(poste_id=None, date_debut=None, date_fin=None, limite=500):
 
 def cout_centre_periode(poste_id, date_debut, date_fin=None):
     """Agrège les charges saisies pour ce poste sur la période, par
-    catégorie, et calcule le coût total du centre de coût."""
+    catégorie et par compte SYSCOHADA, et calcule le coût total du
+    centre de coût."""
     charges = lister_charges(poste_id=poste_id, date_debut=date_debut, date_fin=date_fin,
                               limite=100000)
     par_categorie = {}
+    par_compte = {}
     total = 0.0
     for c in charges:
         par_categorie.setdefault(c["categorie"], 0.0)
         par_categorie[c["categorie"]] += c["montant"]
+
+        cle_compte = (c["compte_num"], c["compte_libelle"])
+        par_compte.setdefault(cle_compte, 0.0)
+        par_compte[cle_compte] += c["montant"]
+
         total += c["montant"]
-    return {"par_categorie": par_categorie, "total": total}
+    return {"par_categorie": par_categorie, "par_compte": par_compte, "total": total}
 
 
 def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, user_id,
@@ -691,14 +714,25 @@ def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, u
     """Calcule le coût total du centre de coût sur la période, le rapporte
     à la masse du flux de sortie choisi (issue du bilan matière) pour
     obtenir un coût unitaire à la tonne, puis enregistre l'écriture
-    comptable correspondante (traçabilité : quel calcul a produit quel
-    montant, à partir de quelles données)."""
+    comptable SYSCOHADA correspondante :
+      - une ligne au débit par compte de charge (classe 6) déjà engagé,
+        pour information/traçabilité (ces charges sont supposées déjà
+        comptabilisées au fil de l'eau en comptabilité générale) ;
+      - une ligne au débit du compte de stock/en-cours (classe 3) du
+        poste, pour le montant total (valorisation de la production) ;
+      - une ligne au crédit du compte de contrepartie 736 "Variation des
+        stocks de biens et de services produits", pour le même montant.
+    """
+    from data_plan_comptable import compte_stock, COMPTE_CONTREPARTIE_STOCK
+
     centre = obtenir_centre_cout(poste_id)
     if centre is None:
         raise ValueError("Aucun centre de coût défini pour ce poste.")
 
     cout = cout_centre_periode(poste_id, date_debut, date_fin)
     total = cout["total"]
+    if total <= 0:
+        raise ValueError("Aucune charge saisie sur cette période : rien à comptabiliser.")
 
     masse_ref = None
     cout_unitaire = None
@@ -709,22 +743,55 @@ def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, u
             masse_ref = agg["masse_totale_t"]
             cout_unitaire = total / masse_ref
 
+    stock = compte_stock(centre["stock_sortie"])
+
     conn = get_connection()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO ecritures_comptables (poste_id, user_id, horodatage, date_debut, "
-        "date_fin, code_centre, compte_charge, montant_total, flux_reference, "
-        "masse_reference_t, cout_unitaire_t, commentaire) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (poste_id, user_id, now_iso(), date_debut, date_fin, centre["code_centre"],
-         centre["compte_charge"], total, flux_reference, masse_ref, cout_unitaire,
+        "date_fin, code_centre, montant_total, flux_reference, masse_reference_t, "
+        "cout_unitaire_t, compte_stock_num, compte_stock_libelle, commentaire) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), date_debut, date_fin, centre["code_centre"], total,
+         flux_reference, masse_ref, cout_unitaire, stock["numero"], stock["libelle"],
          commentaire),
     )
+    ecriture_id = cur.lastrowid
+
+    lignes = []
+    for (compte_num, compte_libelle), montant in cout["par_compte"].items():
+        lignes.append(("Débit", compte_num, compte_libelle,
+                        f"Charges {centre['code_centre']} — période au {date_debut}", montant))
+    lignes.append(("Débit", stock["numero"], stock["libelle"],
+                    f"Entrée en stock — {centre['code_centre']} ({centre['stock_sortie']})",
+                    total))
+    lignes.append(("Crédit", COMPTE_CONTREPARTIE_STOCK["numero"],
+                    COMPTE_CONTREPARTIE_STOCK["libelle"],
+                    f"Valorisation de la production — {centre['code_centre']}", total))
+
+    for sens, compte_num, compte_libelle, libelle_ligne, montant in lignes:
+        conn.execute(
+            "INSERT INTO ecritures_comptables_lignes (ecriture_id, sens, compte_num, "
+            "compte_libelle, libelle_ligne, montant) VALUES (?,?,?,?,?,?)",
+            (ecriture_id, sens, compte_num, compte_libelle, libelle_ligne, montant),
+        )
     conn.commit()
     conn.close()
+
     return {
-        "total": total, "par_categorie": cout["par_categorie"], "masse_reference_t": masse_ref,
-        "cout_unitaire_t": cout_unitaire, "code_centre": centre["code_centre"],
-        "compte_charge": centre["compte_charge"],
+        "ecriture_id": ecriture_id, "total": total, "par_categorie": cout["par_categorie"],
+        "masse_reference_t": masse_ref, "cout_unitaire_t": cout_unitaire,
+        "code_centre": centre["code_centre"], "lignes": lignes,
     }
+
+
+def lister_lignes_ecriture(ecriture_id):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM ecritures_comptables_lignes WHERE ecriture_id = ? ORDER BY id",
+        (ecriture_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def lister_ecritures_comptables(poste_id=None, limite=200):
