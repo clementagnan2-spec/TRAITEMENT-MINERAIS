@@ -5,19 +5,19 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from data_mine_types import postes_pour_type
+from data_postes import POSTES_REF
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_BASE = ("Segoe UI", 10)
 ACCENT = "#2f6f4f"
+
+POSTES_PAR_ID = {p["id"]: p for p in POSTES_REF}
 
 
 class OngletReleves(ttk.Frame):
     def __init__(self, parent, current_user):
         super().__init__(parent, padding=16)
         self.current_user = current_user
-        self.postes_ref = postes_pour_type(db.get_type_mine())
-        self.postes_par_id = {p["id"]: p for p in self.postes_ref}
 
         ttk.Label(self, text="Relevés d'exploitation", font=FONT_TITLE, foreground=ACCENT).pack(
             anchor="w"
@@ -38,7 +38,7 @@ class OngletReleves(ttk.Frame):
         self.poste_var = tk.StringVar()
         self.poste_combo = ttk.Combobox(
             form, textvariable=self.poste_var, state="readonly", width=45, font=FONT_BASE,
-            values=[f"{p['id']} — {p['titre']}" for p in self.postes_ref]
+            values=[f"{p['id']} — {p['titre']}" for p in POSTES_REF]
         )
         self.poste_combo.grid(row=0, column=1, pady=4, sticky="w")
         self.poste_combo.bind("<<ComboboxSelected>>", lambda e: self._maj_parametres())
@@ -85,7 +85,7 @@ class OngletReleves(ttk.Frame):
         filtre_combo = ttk.Combobox(
             filtre_frame, textvariable=self.filtre_var, state="readonly", width=40,
             font=FONT_BASE,
-            values=["Tous"] + [f"{p['id']} — {p['titre']}" for p in self.postes_ref]
+            values=["Tous"] + [f"{p['id']} — {p['titre']}" for p in POSTES_REF]
         )
         filtre_combo.pack(side="left", padx=8)
         filtre_combo.bind("<<ComboboxSelected>>", lambda e: self._rafraichir_historique())
@@ -102,7 +102,7 @@ class OngletReleves(ttk.Frame):
 
     def _maj_parametres(self):
         poste_id = self.poste_var.get().split(" — ")[0]
-        poste = self.postes_par_id.get(poste_id)
+        poste = POSTES_PAR_ID.get(poste_id)
         if poste:
             noms = [p[0] for p in poste["parametres"]]
             self.param_combo.configure(values=noms)
@@ -111,7 +111,7 @@ class OngletReleves(ttk.Frame):
 
     def _maj_unite(self):
         poste_id = self.poste_var.get().split(" — ")[0]
-        poste = self.postes_par_id.get(poste_id)
+        poste = POSTES_PAR_ID.get(poste_id)
         if not poste:
             return
         for nom, unite in poste["parametres"]:

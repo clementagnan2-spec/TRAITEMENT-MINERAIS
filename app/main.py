@@ -26,7 +26,7 @@ from ui_login import EcranConnexion, DialogueChangerMotDePasse
 from ui_dashboard import OngletTableauDeBord
 from ui_releves import OngletReleves
 from ui_productions import OngletProductions
-from ui_couts import OngletCouts
+from ui_couts import OngletCoutsExploitation
 from ui_incidents import OngletIncidents
 from ui_securite import OngletSecuriteOps
 from ui_equipes import OngletEquipes
@@ -34,9 +34,8 @@ from ui_admin import OngletAdministration
 from formation_ui import FormationFrame
 
 APP_TITLE = "Gestion des opérations — Usine de traitement des minerais"
-APP_BUILD = "Build 2026-09-06-18h"
-CREDIT_TEXTE = (f"Logiciel à usage de formation développé par Tagnan Clément : "
-                f"clementagnan2@gmail.com   —   {APP_BUILD}")
+CREDIT_TEXTE = ("Logiciel à usage de formation développé par Tagnan Clément : "
+                "clementagnan2@gmail.com")
 BG = "#f4f6f5"
 ACCENT = "#2f6f4f"
 FONT_BASE = ("Segoe UI", 10)
@@ -141,7 +140,7 @@ class Application(tk.Tk):
         if role in ROLES_PRODUCTIONS:
             notebook.add(OngletProductions(notebook, self.current_user),
                          text="  Production & bilan matière  ")
-            notebook.add(OngletCouts(notebook, self.current_user),
+            notebook.add(OngletCoutsExploitation(notebook, self.current_user),
                          text="  Coûts d'exploitation  ")
 
         notebook.add(OngletIncidents(notebook, self.current_user), text="  Incidents  ")
@@ -152,9 +151,7 @@ class Application(tk.Tk):
 
         if role in ROLES_ADMIN:
             notebook.add(
-                OngletAdministration(notebook, self.current_user,
-                                      on_users_changed=self._construire_application_principale),
-                text="  Administration  "
+                OngletAdministration(notebook, self.current_user), text="  Administration  "
             )
 
         notebook.add(FormationFrame(notebook), text="  Formation  ")

@@ -135,21 +135,48 @@ CREATE TABLE IF NOT EXISTS journal_audit (
     details TEXT
 );
 
-CREATE TABLE IF NOT EXISTS configuration (
-    cle TEXT PRIMARY KEY,
-    valeur TEXT
+-- -----------------------------------------------------------------
+-- Comptabilité analytique : liaison processus -> centre de coût ->
+-- mouvement matière -> coût de production -> écriture comptable.
+-- Un centre de coût par poste (voir data_centres_cout.py) ; les
+-- mouvements de matière réels sont déjà suivis dans la table
+-- "productions" (poste_id + type_flux + masse_tonnes).
+-- -----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS centres_cout (
+    poste_id TEXT PRIMARY KEY REFERENCES postes_reference(id),
+    code_centre TEXT NOT NULL,
+    compte_charge TEXT NOT NULL,
+    stock_entree TEXT,
+    stock_sortie TEXT,
+    methode_cout TEXT NOT NULL DEFAULT 'CMUP',
+    flux_sortie_defaut TEXT
 );
 
-CREATE TABLE IF NOT EXISTS couts (
+CREATE TABLE IF NOT EXISTS charges_exploitation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    categorie TEXT NOT NULL CHECK (categorie IN ('Réactifs','Main-d''oeuvre','Énergie',
-                                                   'Maintenance','Autre')),
-    poste_id TEXT REFERENCES postes_reference(id),
+    poste_id TEXT NOT NULL REFERENCES postes_reference(id),
     user_id INTEGER NOT NULL REFERENCES users(id),
     horodatage TEXT NOT NULL,
+    categorie TEXT NOT NULL CHECK (categorie IN
+        ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Autre')),
     montant REAL NOT NULL,
-    devise TEXT NOT NULL DEFAULT 'XOF',
-    description TEXT
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ecritures_comptables (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    poste_id TEXT NOT NULL REFERENCES postes_reference(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    date_debut TEXT NOT NULL,
+    date_fin TEXT,
+    code_centre TEXT NOT NULL,
+    compte_charge TEXT NOT NULL,
+    montant_total REAL NOT NULL,
+    flux_reference TEXT,
+    masse_reference_t REAL,
+    cout_unitaire_t REAL,
+    commentaire TEXT
 );
 """
 
@@ -182,6 +209,16 @@ def init_db(postes_reference):
             (p["id"], p["partie"], p["titre"]),
         )
 
+    from data_centres_cout import CENTRES_COUT_REF
+    for c in CENTRES_COUT_REF:
+        conn.execute(
+            "INSERT OR IGNORE INTO centres_cout (poste_id, code_centre, compte_charge, "
+            "stock_entree, stock_sortie, methode_cout, flux_sortie_defaut) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (c["poste_id"], c["code_centre"], c["compte_charge"], c["stock_entree"],
+             c["stock_sortie"], c["methode_cout"], c["flux_sortie_defaut"]),
+        )
+
     cur = conn.execute("SELECT COUNT(*) AS n FROM users")
     if cur.fetchone()["n"] == 0:
         h, sel = hash_password("admin123")
@@ -202,120 +239,6 @@ def log_audit(user_id, action, details=""):
     )
     conn.commit()
     conn.close()
-
-
-# ---------------------------------------------------------------------
-# Configuration du site (paramètres clé/valeur, ex. type de mine actif)
-# ---------------------------------------------------------------------
-def get_configuration(cle, defaut=None):
-    conn = get_connection()
-    row = conn.execute("SELECT valeur FROM configuration WHERE cle = ?", (cle,)).fetchone()
-    conn.close()
-    return row["valeur"] if row is not None else defaut
-
-
-def set_configuration(cle, valeur):
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO configuration (cle, valeur) VALUES (?, ?) "
-        "ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
-        (cle, valeur),
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_type_mine():
-    """Retourne le type de mine actif du site (nom du profil dans
-    data_mine_types.MINE_TYPES). Import différé pour éviter tout cycle
-    d'import avec data_mine_types (qui importe data_postes, pas db)."""
-    from data_mine_types import DEFAUT
-    return get_configuration("type_mine", DEFAUT)
-
-
-def set_type_mine(type_mine):
-    set_configuration("type_mine", type_mine)
-
-
-# ---------------------------------------------------------------------
-# Coûts d'exploitation (Réactifs, Main-d'oeuvre, Énergie, Maintenance, Autre)
-# ---------------------------------------------------------------------
-def ajouter_cout(categorie, poste_id, user_id, montant, devise, description):
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO couts (categorie, poste_id, user_id, horodatage, montant, devise, "
-        "description) VALUES (?,?,?,?,?,?,?)",
-        (categorie, poste_id, user_id, now_iso(), montant, devise, description),
-    )
-    conn.commit()
-    conn.close()
-
-
-def lister_couts(categorie=None, poste_id=None, date_debut=None, date_fin=None, limite=500):
-    conn = get_connection()
-    q = (
-        "SELECT c.*, u.nom_complet, p.titre AS poste_titre "
-        "FROM couts c "
-        "JOIN users u ON u.id = c.user_id "
-        "LEFT JOIN postes_reference p ON p.id = c.poste_id WHERE 1=1"
-    )
-    params = []
-    if categorie:
-        q += " AND c.categorie = ?"
-        params.append(categorie)
-    if poste_id:
-        q += " AND c.poste_id = ?"
-        params.append(poste_id)
-    if date_debut:
-        q += " AND c.horodatage >= ?"
-        params.append(date_debut)
-    if date_fin:
-        q += " AND c.horodatage <= ?"
-        params.append(date_fin)
-    q += " ORDER BY c.horodatage DESC LIMIT ?"
-    params.append(limite)
-    rows = conn.execute(q, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def synthese_couts_periode(date_debut, date_fin, poste_id=None):
-    """Calcule le total des coûts par catégorie sur la période, le total
-    général, le tonnage alimenté sur la même période (depuis productions),
-    et le coût par tonne qui en résulte. Retourne un dict prêt à afficher."""
-    couts = lister_couts(poste_id=poste_id, date_debut=date_debut, date_fin=date_fin,
-                          limite=100000)
-    par_categorie = {}
-    total = 0.0
-    devise = "XOF"
-    for c in couts:
-        par_categorie.setdefault(c["categorie"], 0.0)
-        par_categorie[c["categorie"]] += c["montant"]
-        total += c["montant"]
-        devise = c["devise"] or devise
-
-    conn = get_connection()
-    q = "SELECT COALESCE(SUM(masse_tonnes),0) AS s FROM productions WHERE type_flux = " \
-        "'Alimentation' AND horodatage >= ?"
-    params = [date_debut]
-    if date_fin:
-        q += " AND horodatage <= ?"
-        params.append(date_fin)
-    if poste_id:
-        q += " AND poste_id = ?"
-        params.append(poste_id)
-    tonnage = conn.execute(q, params).fetchone()["s"]
-    conn.close()
-
-    cout_par_tonne = (total / tonnage) if tonnage and tonnage > 0 else None
-
-    return {
-        "par_categorie": par_categorie,
-        "total": total,
-        "devise": devise,
-        "tonnage_periode": tonnage,
-        "cout_par_tonne": cout_par_tonne,
-    }
 
 
 # ---------------------------------------------------------------------
@@ -689,3 +612,134 @@ def kpis_du_jour():
         "releves_jour": releves_jour,
         "equipes_planifiees_jour": equipes_jour,
     }
+
+
+# ---------------------------------------------------------------------
+# Comptabilité analytique — centres de coût, charges, écritures
+# ---------------------------------------------------------------------
+def lister_centres_cout():
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT cc.*, p.titre AS poste_titre FROM centres_cout cc "
+        "JOIN postes_reference p ON p.id = cc.poste_id ORDER BY cc.poste_id"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def obtenir_centre_cout(poste_id):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM centres_cout WHERE poste_id = ?", (poste_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def ajouter_charge(poste_id, user_id, categorie, montant, commentaire):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO charges_exploitation (poste_id, user_id, horodatage, categorie, "
+        "montant, commentaire) VALUES (?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), categorie, montant, commentaire),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lister_charges(poste_id=None, date_debut=None, date_fin=None, limite=500):
+    conn = get_connection()
+    q = (
+        "SELECT c.*, u.nom_complet, p.titre AS poste_titre "
+        "FROM charges_exploitation c "
+        "JOIN users u ON u.id = c.user_id "
+        "JOIN postes_reference p ON p.id = c.poste_id WHERE 1=1"
+    )
+    params = []
+    if poste_id:
+        q += " AND c.poste_id = ?"
+        params.append(poste_id)
+    if date_debut:
+        q += " AND c.horodatage >= ?"
+        params.append(date_debut)
+    if date_fin:
+        q += " AND c.horodatage <= ?"
+        params.append(date_fin)
+    q += " ORDER BY c.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def cout_centre_periode(poste_id, date_debut, date_fin=None):
+    """Agrège les charges saisies pour ce poste sur la période, par
+    catégorie, et calcule le coût total du centre de coût."""
+    charges = lister_charges(poste_id=poste_id, date_debut=date_debut, date_fin=date_fin,
+                              limite=100000)
+    par_categorie = {}
+    total = 0.0
+    for c in charges:
+        par_categorie.setdefault(c["categorie"], 0.0)
+        par_categorie[c["categorie"]] += c["montant"]
+        total += c["montant"]
+    return {"par_categorie": par_categorie, "total": total}
+
+
+def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, user_id,
+                                commentaire=""):
+    """Calcule le coût total du centre de coût sur la période, le rapporte
+    à la masse du flux de sortie choisi (issue du bilan matière) pour
+    obtenir un coût unitaire à la tonne, puis enregistre l'écriture
+    comptable correspondante (traçabilité : quel calcul a produit quel
+    montant, à partir de quelles données)."""
+    centre = obtenir_centre_cout(poste_id)
+    if centre is None:
+        raise ValueError("Aucun centre de coût défini pour ce poste.")
+
+    cout = cout_centre_periode(poste_id, date_debut, date_fin)
+    total = cout["total"]
+
+    masse_ref = None
+    cout_unitaire = None
+    if flux_reference:
+        bilan = bilan_matiere_periode(poste_id, date_debut, date_fin)
+        agg = bilan.get(flux_reference)
+        if agg and agg["masse_totale_t"] > 0:
+            masse_ref = agg["masse_totale_t"]
+            cout_unitaire = total / masse_ref
+
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO ecritures_comptables (poste_id, user_id, horodatage, date_debut, "
+        "date_fin, code_centre, compte_charge, montant_total, flux_reference, "
+        "masse_reference_t, cout_unitaire_t, commentaire) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), date_debut, date_fin, centre["code_centre"],
+         centre["compte_charge"], total, flux_reference, masse_ref, cout_unitaire,
+         commentaire),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "total": total, "par_categorie": cout["par_categorie"], "masse_reference_t": masse_ref,
+        "cout_unitaire_t": cout_unitaire, "code_centre": centre["code_centre"],
+        "compte_charge": centre["compte_charge"],
+    }
+
+
+def lister_ecritures_comptables(poste_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT e.*, p.titre AS poste_titre, u.nom_complet FROM ecritures_comptables e "
+        "JOIN postes_reference p ON p.id = e.poste_id "
+        "JOIN users u ON u.id = e.user_id WHERE 1=1"
+    )
+    params = []
+    if poste_id:
+        q += " AND e.poste_id = ?"
+        params.append(poste_id)
+    q += " ORDER BY e.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

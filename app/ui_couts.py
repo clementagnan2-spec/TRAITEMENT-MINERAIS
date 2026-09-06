@@ -1,16 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Suivi des coûts d'exploitation (réactifs, main-d'œuvre, énergie,
-maintenance) et calcul du coût par tonne traitée à partir des données de
-production réelles. Complète l'onglet Production & bilan matière sans
-remplacer un logiciel de comptabilité générale : ce n'est pas une
-comptabilité officielle, seulement un suivi opérationnel des coûts."""
+"""Onglet Coûts d'exploitation.
 
-import datetime
+Réalise la liaison :
+    Processus industriel (poste) -> Centre de coût -> Mouvement matière
+    (productions déjà saisies dans l'onglet Production & bilan matière)
+    -> Coût de production -> Écriture comptable.
+
+Les charges (matière, énergie, réactifs, main-d'œuvre, maintenance) sont
+saisies ici par poste. Le coût de revient est calculé en rapportant le
+total des charges d'une période à la masse du flux de sortie choisi (issu
+du bilan matière déjà calculé dans l'onglet Production). L'écriture
+comptable générée fige ce calcul (montant, centre de coût, compte de
+charge, coût unitaire) pour traçabilité.
+"""
+
 import tkinter as tk
+import datetime
 from tkinter import ttk, messagebox
 
 import db
-from data_mine_types import postes_pour_type
+from data_postes import POSTES_REF
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_H2 = ("Segoe UI", 12, "bold")
@@ -18,198 +27,322 @@ FONT_BASE = ("Segoe UI", 10)
 FONT_MONO = ("Consolas", 10)
 ACCENT = "#2f6f4f"
 
-CATEGORIES = ["Réactifs", "Main-d'oeuvre", "Énergie", "Maintenance", "Autre"]
+CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Autre"]
+TYPES_FLUX = ["Alimentation", "Concentré", "Stérile / rejet", "Produit fini"]
 
 
-class OngletCouts(ttk.Frame):
+class OngletCoutsExploitation(ttk.Frame):
     def __init__(self, parent, current_user):
         super().__init__(parent, padding=16)
         self.current_user = current_user
-        self.postes_ref = postes_pour_type(db.get_type_mine())
+        self._dernier_bilan_poste = None
 
-        ttk.Label(self, text="Coûts d'exploitation", font=FONT_TITLE, foreground=ACCENT).pack(
-            anchor="w"
-        )
+        ttk.Label(self, text="Coûts d'exploitation", font=FONT_TITLE,
+                  foreground=ACCENT).pack(anchor="w")
         ttk.Label(
             self,
-            text="Suivi des coûts réels (réactifs, main-d'œuvre, énergie, maintenance) et "
-                 "calcul du coût par tonne traitée à partir des productions enregistrées. "
-                 "Ce n'est pas une comptabilité officielle — pour vos états financiers, "
-                 "utilisez votre logiciel de comptabilité habituel.",
-            font=FONT_BASE, wraplength=820,
+            text="Chaque poste est relié à un centre de coût. Saisissez ici les charges "
+                 "(matière, énergie, réactifs, main-d'œuvre, maintenance) par poste, puis "
+                 "calculez le coût de revient sur une période à partir du bilan matière et "
+                 "générez l'écriture comptable correspondante.",
+            font=FONT_BASE, wraplength=860,
         ).pack(anchor="w", pady=(2, 14))
 
-        # --- Formulaire de saisie ---
-        form = ttk.LabelFrame(self, text="Enregistrer un coût", padding=12)
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True)
+
+        self._onglet_referentiel(notebook)
+        self._onglet_saisie(notebook)
+        self._onglet_calcul(notebook)
+
+    # -----------------------------------------------------------------
+    # Sous-onglet : référentiel des centres de coût
+    # -----------------------------------------------------------------
+    def _onglet_referentiel(self, notebook):
+        frame = ttk.Frame(notebook, padding=12)
+        notebook.add(frame, text="Référentiel des centres de coût")
+
+        cols = ("poste_id", "poste_titre", "code_centre", "compte_charge", "stock_entree",
+                "stock_sortie", "methode_cout")
+        tree = ttk.Treeview(frame, columns=cols, show="headings", height=14)
+        largeurs = (60, 170, 90, 150, 110, 130, 90)
+        for c, w in zip(cols, largeurs):
+            tree.heading(c, text=c.replace("_", " ").capitalize())
+            tree.column(c, width=w, anchor="w")
+        tree.pack(fill="both", expand=True)
+
+        for c in db.lister_centres_cout():
+            tree.insert("", "end", values=(c["poste_id"], c["poste_titre"], c["code_centre"],
+                                            c["compte_charge"], c["stock_entree"],
+                                            c["stock_sortie"], c["methode_cout"]))
+
+    # -----------------------------------------------------------------
+    # Sous-onglet : saisie des charges
+    # -----------------------------------------------------------------
+    def _onglet_saisie(self, notebook):
+        frame = ttk.Frame(notebook, padding=12)
+        notebook.add(frame, text="Saisie des charges")
+
+        form = ttk.LabelFrame(frame, text="Nouvelle charge d'exploitation", padding=12)
         form.pack(fill="x")
 
-        ttk.Label(form, text="Catégorie :", font=FONT_BASE).grid(
+        ttk.Label(form, text="Poste / centre de coût :", font=FONT_BASE).grid(
             row=0, column=0, sticky="w", padx=(0, 8), pady=4
         )
-        self.categorie_var = tk.StringVar(value=CATEGORIES[0])
+        self.charge_poste_var = tk.StringVar()
         ttk.Combobox(
-            form, textvariable=self.categorie_var, state="readonly", width=20, font=FONT_BASE,
-            values=CATEGORIES
+            form, textvariable=self.charge_poste_var, state="readonly", width=42,
+            font=FONT_BASE, values=[f"{p['id']} — {p['titre']}" for p in POSTES_REF]
         ).grid(row=0, column=1, pady=4, sticky="w")
 
-        ttk.Label(form, text="Poste concerné (optionnel) :", font=FONT_BASE).grid(
+        ttk.Label(form, text="Catégorie :", font=FONT_BASE).grid(
             row=1, column=0, sticky="w", padx=(0, 8), pady=4
         )
-        self.poste_var = tk.StringVar()
+        self.categorie_var = tk.StringVar(value=CATEGORIES_CHARGE[0])
         ttk.Combobox(
-            form, textvariable=self.poste_var, state="readonly", width=42, font=FONT_BASE,
-            values=["—"] + [f"{p['id']} — {p['titre']}" for p in self.postes_ref]
+            form, textvariable=self.categorie_var, state="readonly", width=20, font=FONT_BASE,
+            values=CATEGORIES_CHARGE
         ).grid(row=1, column=1, pady=4, sticky="w")
 
-        ttk.Label(form, text="Montant :", font=FONT_BASE).grid(
+        ttk.Label(form, text="Montant (FCFA) :", font=FONT_BASE).grid(
             row=2, column=0, sticky="w", padx=(0, 8), pady=4
         )
-        montant_frame = ttk.Frame(form)
-        montant_frame.grid(row=2, column=1, sticky="w", pady=4)
         self.montant_var = tk.StringVar()
-        ttk.Entry(montant_frame, textvariable=self.montant_var, width=16, font=FONT_BASE).pack(
-            side="left"
-        )
-        self.devise_var = tk.StringVar(value="XOF")
-        ttk.Entry(montant_frame, textvariable=self.devise_var, width=6, font=FONT_BASE).pack(
-            side="left", padx=(6, 0)
+        ttk.Entry(form, textvariable=self.montant_var, width=18, font=FONT_BASE).grid(
+            row=2, column=1, pady=4, sticky="w"
         )
 
-        ttk.Label(form, text="Description :", font=FONT_BASE).grid(
+        ttk.Label(form, text="Commentaire :", font=FONT_BASE).grid(
             row=3, column=0, sticky="w", padx=(0, 8), pady=4
         )
-        self.description_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.description_var, width=42, font=FONT_BASE).grid(
-            row=3, column=1, pady=4, sticky="w"
-        )
+        self.charge_commentaire_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.charge_commentaire_var, width=42,
+                  font=FONT_BASE).grid(row=3, column=1, pady=4, sticky="w")
 
-        ttk.Button(form, text="Enregistrer le coût", command=self._enregistrer).grid(
+        ttk.Button(form, text="Enregistrer la charge", command=self._enregistrer_charge).grid(
             row=4, column=1, sticky="w", pady=10
         )
 
-        # --- Synthèse / coût par tonne ---
-        synth_frame = ttk.LabelFrame(self, text="Synthèse et coût par tonne", padding=12)
-        synth_frame.pack(fill="both", expand=True, pady=(14, 0))
-
-        periode_frame = ttk.Frame(synth_frame)
-        periode_frame.pack(anchor="w", pady=(0, 8))
-        ttk.Label(periode_frame, text="Poste (optionnel) :", font=FONT_BASE).pack(side="left")
-        self.synth_poste_var = tk.StringVar()
-        ttk.Combobox(
-            periode_frame, textvariable=self.synth_poste_var, state="readonly", width=32,
-            font=FONT_BASE, values=["Tous"] + [f"{p['id']} — {p['titre']}" for p in
-                                                self.postes_ref]
-        ).pack(side="left", padx=(4, 16))
-
-        ttk.Label(periode_frame, text="Depuis (AAAA-MM-JJ) :", font=FONT_BASE).pack(side="left")
-        self.date_debut_var = tk.StringVar(
-            value=(datetime.date.today() - datetime.timedelta(days=30)).isoformat()
-        )
-        ttk.Entry(periode_frame, textvariable=self.date_debut_var, width=12, font=FONT_BASE).pack(
-            side="left", padx=(4, 16)
-        )
-        ttk.Button(periode_frame, text="Calculer", command=self._calculer_synthese).pack(
-            side="left"
-        )
-
-        self.resultat = tk.Text(
-            synth_frame, height=10, font=FONT_MONO, bg="#ffffff", relief="solid", borderwidth=1
-        )
-        self.resultat.pack(fill="both", expand=True)
-        self.resultat.configure(state="disabled")
-
-        # --- Historique ---
-        ttk.Label(self, text="Derniers coûts enregistrés", font=FONT_H2).pack(
+        ttk.Label(frame, text="Dernières charges saisies", font=FONT_H2).pack(
             anchor="w", pady=(14, 4)
         )
-        cols = ("horodatage", "categorie", "poste_titre", "montant", "devise", "nom_complet",
-                "description")
-        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=8)
-        largeurs = (130, 100, 160, 90, 50, 130, 220)
-        for c, w in zip(cols, largeurs):
-            self.tree.heading(c, text=c.replace("_", " ").capitalize())
-            self.tree.column(c, width=w, anchor="w")
-        self.tree.pack(fill="both", expand=True)
+        cols = ("horodatage", "poste_titre", "categorie", "montant", "nom_complet",
+                "commentaire")
+        self.tree_charges = ttk.Treeview(frame, columns=cols, show="headings", height=8)
+        for c, w in zip(cols, (140, 170, 100, 100, 140, 200)):
+            self.tree_charges.heading(c, text=c.replace("_", " ").capitalize())
+            self.tree_charges.column(c, width=w, anchor="w")
+        self.tree_charges.pack(fill="both", expand=True)
 
-        self._rafraichir_historique()
+        self._rafraichir_charges()
 
-    def _enregistrer(self):
+    def _enregistrer_charge(self):
+        if not self.charge_poste_var.get():
+            messagebox.showerror("Erreur", "Sélectionnez un poste.")
+            return
         try:
             montant = float(self.montant_var.get().replace(",", "."))
         except ValueError:
             messagebox.showerror("Erreur", "Le montant doit être un nombre.")
             return
-        if montant <= 0:
-            messagebox.showerror("Erreur", "Le montant doit être positif.")
-            return
 
-        choix = self.poste_var.get()
-        poste_id = None if choix in ("", "—") else choix.split(" — ")[0]
-        devise = self.devise_var.get().strip() or "XOF"
-
-        db.ajouter_cout(self.categorie_var.get(), poste_id, self.current_user["id"], montant,
-                         devise, self.description_var.get().strip())
-        db.log_audit(self.current_user["id"], "Ajout coût",
-                      f"{self.categorie_var.get()} / {montant} {devise}")
+        poste_id = self.charge_poste_var.get().split(" — ")[0]
+        db.ajouter_charge(poste_id, self.current_user["id"], self.categorie_var.get(), montant,
+                           self.charge_commentaire_var.get().strip())
+        db.log_audit(self.current_user["id"], "Ajout charge d'exploitation",
+                      f"{poste_id} / {self.categorie_var.get()} / {montant} FCFA")
 
         self.montant_var.set("")
-        self.description_var.set("")
-        self._rafraichir_historique()
-        messagebox.showinfo("Enregistré", "Coût enregistré avec succès.")
+        self.charge_commentaire_var.set("")
+        self._rafraichir_charges()
+        messagebox.showinfo("Enregistré", "Charge enregistrée avec succès.")
 
-    def _ecrire_synthese(self, texte):
+    def _rafraichir_charges(self):
+        for row in self.tree_charges.get_children():
+            self.tree_charges.delete(row)
+        for c in db.lister_charges(limite=100):
+            self.tree_charges.insert(
+                "", "end",
+                values=(c["horodatage"], c["poste_titre"], c["categorie"],
+                        f"{c['montant']:.0f}", c["nom_complet"], c["commentaire"] or "")
+            )
+
+    # -----------------------------------------------------------------
+    # Sous-onglet : coût de revient & écriture comptable
+    # -----------------------------------------------------------------
+    def _onglet_calcul(self, notebook):
+        frame = ttk.Frame(notebook, padding=12)
+        notebook.add(frame, text="Coût de revient & écriture comptable")
+
+        periode_frame = ttk.LabelFrame(frame, text="Période de calcul", padding=12)
+        periode_frame.pack(fill="x")
+
+        ttk.Label(periode_frame, text="Poste :", font=FONT_BASE).grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        self.calc_poste_var = tk.StringVar()
+        ttk.Combobox(
+            periode_frame, textvariable=self.calc_poste_var, state="readonly", width=42,
+            font=FONT_BASE, values=[f"{p['id']} — {p['titre']}" for p in POSTES_REF]
+        ).grid(row=0, column=1, pady=4, sticky="w")
+
+        ttk.Label(periode_frame, text="Depuis (AAAA-MM-JJ) :", font=FONT_BASE).grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        self.calc_date_debut_var = tk.StringVar(
+            value=(datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        )
+        ttk.Entry(periode_frame, textvariable=self.calc_date_debut_var, width=14,
+                  font=FONT_BASE).grid(row=1, column=1, pady=4, sticky="w")
+
+        ttk.Button(periode_frame, text="Calculer le coût", command=self._calculer_cout).grid(
+            row=2, column=1, sticky="w", pady=8
+        )
+
+        self.resultat = tk.Text(
+            frame, height=11, font=FONT_MONO, bg="#ffffff", relief="solid", borderwidth=1
+        )
+        self.resultat.pack(fill="both", expand=True, pady=(10, 10))
+        self.resultat.configure(state="disabled")
+
+        generer_frame = ttk.LabelFrame(frame, text="Générer l'écriture comptable", padding=12)
+        generer_frame.pack(fill="x")
+
+        ttk.Label(generer_frame, text="Flux de sortie de référence :", font=FONT_BASE).grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        self.flux_ref_var = tk.StringVar()
+        self.flux_ref_combo = ttk.Combobox(
+            generer_frame, textvariable=self.flux_ref_var, state="readonly", width=20,
+            font=FONT_BASE, values=TYPES_FLUX
+        )
+        self.flux_ref_combo.grid(row=0, column=1, sticky="w")
+
+        ttk.Button(generer_frame, text="Générer l'écriture comptable",
+                   command=self._generer_ecriture).grid(row=0, column=2, padx=(16, 0))
+
+        ttk.Label(frame, text="Écritures comptables générées", font=FONT_H2).pack(
+            anchor="w", pady=(14, 4)
+        )
+        cols = ("horodatage", "poste_titre", "code_centre", "compte_charge", "montant_total",
+                "flux_reference", "masse_reference_t", "cout_unitaire_t")
+        self.tree_ecritures = ttk.Treeview(frame, columns=cols, show="headings", height=7)
+        largeurs = (140, 160, 80, 140, 110, 100, 110, 110)
+        for c, w in zip(cols, largeurs):
+            self.tree_ecritures.heading(c, text=c.replace("_", " ").capitalize())
+            self.tree_ecritures.column(c, width=w, anchor="w")
+        self.tree_ecritures.pack(fill="both", expand=True)
+
+        self._rafraichir_ecritures()
+
+    def _ecrire_resultat(self, texte):
         self.resultat.configure(state="normal")
         self.resultat.delete("1.0", "end")
         self.resultat.insert("end", texte)
         self.resultat.configure(state="disabled")
 
-    def _calculer_synthese(self):
-        choix = self.synth_poste_var.get()
-        poste_id = None if choix in ("", "Tous") else choix.split(" — ")[0]
-        date_debut = self.date_debut_var.get().strip()
+    def _calculer_cout(self):
+        if not self.calc_poste_var.get():
+            messagebox.showerror("Erreur", "Sélectionnez un poste.")
+            return
+        poste_id = self.calc_poste_var.get().split(" — ")[0]
+        date_debut = self.calc_date_debut_var.get().strip()
 
-        synth = db.synthese_couts_periode(date_debut, None, poste_id=poste_id)
-
-        if synth["total"] == 0:
-            self._ecrire_synthese(
-                "Aucun coût enregistré pour cette période / ce poste.\nEnregistrez des "
-                "coûts ci-dessus pour voir apparaître la synthèse."
+        centre = db.obtenir_centre_cout(poste_id)
+        if centre is None:
+            messagebox.showerror(
+                "Erreur", "Aucun centre de coût n'est défini pour ce poste dans le "
+                          "référentiel (data_centres_cout.py)."
             )
             return
 
-        lignes = [f"SYNTHÈSE DES COÛTS — {choix or 'Tous les postes'}",
-                  f"Depuis le {date_debut}\n", "Répartition par catégorie :"]
-        for cat, montant in synth["par_categorie"].items():
-            part = montant / synth["total"] * 100
-            lignes.append(f"  {cat:<16} {montant:>14,.0f} {synth['devise']}   "
-                          f"({part:5.1f} %)".replace(",", " "))
+        cout = db.cout_centre_periode(poste_id, date_debut, None)
+        bilan = db.bilan_matiere_periode(poste_id, date_debut, None)
 
-        lignes.append("")
-        lignes.append(f"TOTAL DES COÛTS : {synth['total']:,.0f} {synth['devise']}".replace(
-            ",", " "))
-        lignes.append(f"Tonnage alimenté sur la période : {synth['tonnage_periode']:,.1f} t"
-                      .replace(",", " "))
+        lignes = [
+            f"COÛT DE PRODUCTION — {self.calc_poste_var.get()}",
+            f"Centre de coût : {centre['code_centre']}   —   Compte de charge : "
+            f"{centre['compte_charge']}",
+            f"Depuis le {date_debut}\n",
+            "Charges par catégorie :",
+        ]
+        if not cout["par_categorie"]:
+            lignes.append("  (aucune charge saisie sur cette période)")
+        for categorie, montant in cout["par_categorie"].items():
+            lignes.append(f"  {categorie:<14} {montant:14,.0f} FCFA".replace(",", " "))
+        lignes.append(f"\nCoût total du centre {centre['code_centre']} : "
+                       f"{cout['total']:,.0f} FCFA".replace(",", " "))
 
-        if synth["cout_par_tonne"] is not None:
-            lignes.append("")
-            lignes.append(f"➜ COÛT PAR TONNE TRAITÉE : {synth['cout_par_tonne']:,.0f} "
-                          f"{synth['devise']} / t".replace(",", " "))
+        lignes.append("\nBilan matière disponible sur la période (pour le coût unitaire) :")
+        if not bilan:
+            lignes.append("  (aucune production saisie sur cette période pour ce poste)")
+            self.flux_ref_combo.configure(values=TYPES_FLUX)
         else:
-            lignes.append("")
-            lignes.append("Coût par tonne non calculable : aucune production "
-                          "(Alimentation) enregistrée sur cette période pour ce poste. "
-                          "Renseignez les productions réelles dans l'onglet « Production "
-                          "& bilan matière ».")
+            for flux, agg in bilan.items():
+                lignes.append(f"  {flux:<18} masse = {agg['masse_totale_t']:.2f} t")
+            self.flux_ref_combo.configure(values=list(bilan.keys()))
+            defaut = centre.get("flux_sortie_defaut")
+            if defaut in bilan:
+                self.flux_ref_var.set(defaut)
+            else:
+                self.flux_ref_var.set(list(bilan.keys())[0])
 
-        self._ecrire_synthese("\n".join(lignes))
+        self._ecrire_resultat("\n".join(lignes))
+        self._dernier_bilan_poste = poste_id
 
-    def _rafraichir_historique(self):
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-        for c in db.lister_couts(limite=100):
-            self.tree.insert(
+    def _generer_ecriture(self):
+        if not self.calc_poste_var.get():
+            messagebox.showerror("Erreur", "Sélectionnez un poste et calculez le coût d'abord.")
+            return
+        poste_id = self.calc_poste_var.get().split(" — ")[0]
+        if poste_id != self._dernier_bilan_poste:
+            messagebox.showerror(
+                "Erreur", "Cliquez d'abord sur \u00ab Calculer le coût \u00bb pour ce poste "
+                          "et cette période."
+            )
+            return
+
+        date_debut = self.calc_date_debut_var.get().strip()
+        flux_reference = self.flux_ref_var.get() or None
+
+        try:
+            resultat = db.generer_ecriture_comptable(
+                poste_id, date_debut, None, flux_reference, self.current_user["id"]
+            )
+        except ValueError as e:
+            messagebox.showerror("Erreur", str(e))
+            return
+
+        db.log_audit(
+            self.current_user["id"], "Génération écriture comptable",
+            f"{poste_id} / {resultat['code_centre']} / {resultat['total']:.0f} FCFA"
+        )
+        self._rafraichir_ecritures()
+
+        detail_unitaire = (
+            f"{resultat['cout_unitaire_t']:.2f} FCFA/t (sur {resultat['masse_reference_t']:.2f} t)"
+            if resultat["cout_unitaire_t"] is not None
+            else "non calculable (pas de masse pour ce flux sur la période)"
+        )
+        messagebox.showinfo(
+            "Écriture générée",
+            f"Écriture comptable enregistrée pour {resultat['code_centre']} "
+            f"({resultat['compte_charge']}) :\n"
+            f"Montant total : {resultat['total']:.0f} FCFA\n"
+            f"Coût unitaire : {detail_unitaire}"
+        )
+
+    def _rafraichir_ecritures(self):
+        for row in self.tree_ecritures.get_children():
+            self.tree_ecritures.delete(row)
+        for e in db.lister_ecritures_comptables(limite=100):
+            self.tree_ecritures.insert(
                 "", "end",
-                values=(c["horodatage"], c["categorie"], c["poste_titre"] or "—",
-                        f"{c['montant']:,.0f}".replace(",", " "), c["devise"],
-                        c["nom_complet"], c["description"] or "")
+                values=(
+                    e["horodatage"], e["poste_titre"], e["code_centre"], e["compte_charge"],
+                    f"{e['montant_total']:.0f}", e["flux_reference"] or "",
+                    f"{e['masse_reference_t']:.2f}" if e["masse_reference_t"] is not None
+                    else "",
+                    f"{e['cout_unitaire_t']:.2f}" if e["cout_unitaire_t"] is not None else "",
+                )
             )

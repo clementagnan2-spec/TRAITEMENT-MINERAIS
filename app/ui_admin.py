@@ -5,10 +5,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from data_mine_types import liste_types_mine, MINE_TYPES
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
-FONT_H2 = ("Segoe UI", 12, "bold")
 FONT_BASE = ("Segoe UI", 10)
 ACCENT = "#2f6f4f"
 
@@ -27,49 +25,8 @@ class OngletAdministration(ttk.Frame):
         self.current_user = current_user
         self.on_users_changed = on_users_changed
 
-        ttk.Label(self, text="Administration", font=FONT_TITLE,
+        ttk.Label(self, text="Administration — comptes utilisateurs", font=FONT_TITLE,
                   foreground=ACCENT).pack(anchor="w")
-        ttk.Label(
-            self,
-            text="Comptes utilisateurs et paramètres du site.",
-            font=FONT_BASE,
-        ).pack(anchor="w", pady=(2, 14))
-
-        # --- Type de mine du site (filtre automatiquement les postes affichés) ---
-        type_mine_frame = ttk.LabelFrame(self, text="Type de mine du site", padding=12)
-        type_mine_frame.pack(fill="x", pady=(0, 14))
-
-        ttk.Label(
-            type_mine_frame,
-            text="Choisissez le type de mine : cela filtre automatiquement les postes/"
-                 "circuits proposés dans tous les formulaires de saisie (Relevés, "
-                 "Production, Incidents, Équipes, Sécurité) pour ne montrer que ceux "
-                 "pertinents à votre exploitation.",
-            font=FONT_BASE, wraplength=820, justify="left",
-        ).pack(anchor="w", pady=(0, 8))
-
-        ligne = ttk.Frame(type_mine_frame)
-        ligne.pack(anchor="w", fill="x")
-        ttk.Label(ligne, text="Type de mine :", font=FONT_BASE).pack(side="left")
-        self.type_mine_var = tk.StringVar(value=db.get_type_mine())
-        self.type_mine_combo = ttk.Combobox(
-            ligne, textvariable=self.type_mine_var, state="readonly", width=48,
-            font=FONT_BASE, values=liste_types_mine()
-        )
-        self.type_mine_combo.pack(side="left", padx=(6, 10))
-        self.type_mine_combo.bind("<<ComboboxSelected>>", lambda e: self._maj_description())
-        ttk.Button(ligne, text="Appliquer", command=self._appliquer_type_mine).pack(side="left")
-
-        self.description_label = ttk.Label(
-            type_mine_frame, text="", font=("Segoe UI", 9, "italic"), foreground="#555555",
-            wraplength=820, justify="left"
-        )
-        self.description_label.pack(anchor="w", pady=(8, 0))
-        self._maj_description()
-
-        ttk.Label(self, text="Comptes utilisateurs", font=FONT_H2).pack(
-            anchor="w", pady=(4, 4)
-        )
         ttk.Label(
             self,
             text="Créez les comptes de vos collaborateurs et gérez leurs rôles. Chaque "
@@ -140,28 +97,6 @@ class OngletAdministration(ttk.Frame):
                    command=self._reactiver).pack(side="left")
 
         self._rafraichir()
-
-    def _maj_description(self):
-        profil = MINE_TYPES.get(self.type_mine_var.get())
-        if profil:
-            self.description_label.configure(text=profil["description"])
-
-    def _appliquer_type_mine(self):
-        nouveau = self.type_mine_var.get()
-        ancien = db.get_type_mine()
-        if nouveau == ancien:
-            messagebox.showinfo("Aucun changement", "Ce type de mine est déjà actif.")
-            return
-        db.set_type_mine(nouveau)
-        db.log_audit(self.current_user["id"], "Changement type de mine",
-                      f"{ancien} → {nouveau}")
-        messagebox.showinfo(
-            "Type de mine mis à jour",
-            f"Type de mine défini sur « {nouveau} ». L'application va se recharger pour "
-            f"appliquer le filtrage des postes dans tous les formulaires."
-        )
-        if self.on_users_changed:
-            self.on_users_changed()
 
     def _creer(self):
         nom = self.nom_var.get().strip()

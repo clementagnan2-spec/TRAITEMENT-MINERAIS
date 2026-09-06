@@ -43,8 +43,4 @@ POSTES_REF = [
                     ("Teneur métal solution sortie", "ppm")]},
     {"id": "D1", "partie": "D — Finition", "titre": "Conditionnement / finition",
      "parametres": [("Humidité résiduelle", "%"), ("Poids net conditionné", "kg")]},
-    {"id": "D2", "partie": "D — Finition", "titre": "Tailings (résidus miniers à retraiter)",
-     "parametres": [("Teneur résiduelle moyenne", "%"), ("Tonnage stocké", "t"),
-                    ("Densité de la pulpe résiduelle", "%"),
-                    ("Taux de récupération d'eau", "%")]},
 ]
