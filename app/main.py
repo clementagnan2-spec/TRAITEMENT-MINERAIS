@@ -26,6 +26,7 @@ from ui_login import EcranConnexion, DialogueChangerMotDePasse
 from ui_dashboard import OngletTableauDeBord
 from ui_releves import OngletReleves
 from ui_productions import OngletProductions
+from ui_couts import OngletCouts
 from ui_incidents import OngletIncidents
 from ui_securite import OngletSecuriteOps
 from ui_equipes import OngletEquipes
@@ -139,6 +140,8 @@ class Application(tk.Tk):
         if role in ROLES_PRODUCTIONS:
             notebook.add(OngletProductions(notebook, self.current_user),
                          text="  Production & bilan matière  ")
+            notebook.add(OngletCouts(notebook, self.current_user),
+                         text="  Coûts d'exploitation  ")
 
         notebook.add(OngletIncidents(notebook, self.current_user), text="  Incidents  ")
         notebook.add(OngletSecuriteOps(notebook, self.current_user), text="  Sécurité (LOTO/HSE)  ")

@@ -139,6 +139,18 @@ CREATE TABLE IF NOT EXISTS configuration (
     cle TEXT PRIMARY KEY,
     valeur TEXT
 );
+
+CREATE TABLE IF NOT EXISTS couts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    categorie TEXT NOT NULL CHECK (categorie IN ('Réactifs','Main-d''oeuvre','Énergie',
+                                                   'Maintenance','Autre')),
+    poste_id TEXT REFERENCES postes_reference(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    montant REAL NOT NULL,
+    devise TEXT NOT NULL DEFAULT 'XOF',
+    description TEXT
+);
 """
 
 
@@ -223,6 +235,87 @@ def get_type_mine():
 
 def set_type_mine(type_mine):
     set_configuration("type_mine", type_mine)
+
+
+# ---------------------------------------------------------------------
+# Coûts d'exploitation (Réactifs, Main-d'oeuvre, Énergie, Maintenance, Autre)
+# ---------------------------------------------------------------------
+def ajouter_cout(categorie, poste_id, user_id, montant, devise, description):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO couts (categorie, poste_id, user_id, horodatage, montant, devise, "
+        "description) VALUES (?,?,?,?,?,?,?)",
+        (categorie, poste_id, user_id, now_iso(), montant, devise, description),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lister_couts(categorie=None, poste_id=None, date_debut=None, date_fin=None, limite=500):
+    conn = get_connection()
+    q = (
+        "SELECT c.*, u.nom_complet, p.titre AS poste_titre "
+        "FROM couts c "
+        "JOIN users u ON u.id = c.user_id "
+        "LEFT JOIN postes_reference p ON p.id = c.poste_id WHERE 1=1"
+    )
+    params = []
+    if categorie:
+        q += " AND c.categorie = ?"
+        params.append(categorie)
+    if poste_id:
+        q += " AND c.poste_id = ?"
+        params.append(poste_id)
+    if date_debut:
+        q += " AND c.horodatage >= ?"
+        params.append(date_debut)
+    if date_fin:
+        q += " AND c.horodatage <= ?"
+        params.append(date_fin)
+    q += " ORDER BY c.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def synthese_couts_periode(date_debut, date_fin, poste_id=None):
+    """Calcule le total des coûts par catégorie sur la période, le total
+    général, le tonnage alimenté sur la même période (depuis productions),
+    et le coût par tonne qui en résulte. Retourne un dict prêt à afficher."""
+    couts = lister_couts(poste_id=poste_id, date_debut=date_debut, date_fin=date_fin,
+                          limite=100000)
+    par_categorie = {}
+    total = 0.0
+    devise = "XOF"
+    for c in couts:
+        par_categorie.setdefault(c["categorie"], 0.0)
+        par_categorie[c["categorie"]] += c["montant"]
+        total += c["montant"]
+        devise = c["devise"] or devise
+
+    conn = get_connection()
+    q = "SELECT COALESCE(SUM(masse_tonnes),0) AS s FROM productions WHERE type_flux = " \
+        "'Alimentation' AND horodatage >= ?"
+    params = [date_debut]
+    if date_fin:
+        q += " AND horodatage <= ?"
+        params.append(date_fin)
+    if poste_id:
+        q += " AND poste_id = ?"
+        params.append(poste_id)
+    tonnage = conn.execute(q, params).fetchone()["s"]
+    conn.close()
+
+    cout_par_tonne = (total / tonnage) if tonnage and tonnage > 0 else None
+
+    return {
+        "par_categorie": par_categorie,
+        "total": total,
+        "devise": devise,
+        "tonnage_periode": tonnage,
+        "cout_par_tonne": cout_par_tonne,
+    }
 
 
 # ---------------------------------------------------------------------
