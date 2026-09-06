@@ -614,6 +614,59 @@ POSTES = [
         "securite": None,
     },
     {
+        "partie": "D — Finition",
+        "id": "D2",
+        "titre": "Tailings — résidus miniers à retraiter",
+        "description": "Gestion du parc à résidus (Tailings Storage Facility, TSF) où sont "
+                        "déposés les rejets finaux du procédé (queues de flottation, "
+                        "résidus de lixiviation). Contrairement au stérile de mine, les "
+                        "résidus conservent souvent une teneur résiduelle non nulle : ce "
+                        "poste inclut le suivi de cette teneur en vue d'un retraitement "
+                        "futur (récupération de métal supplémentaire par une méthode plus "
+                        "performante, ou valorisation de résidus historiques).",
+        "controles": [
+            "Intégrité géotechnique de la digue / du parc à résidus (fissures, "
+            "suintements, tassements anormaux)",
+            "Teneur résiduelle échantillonnée périodiquement (suivi de performance du "
+            "circuit amont ET potentiel de retraitement)",
+            "Gestion du bilan hydrique : eau de procédé recyclée depuis le parc vers "
+            "l'usine",
+            "Respect des plans de dépôt (zonage, épaisseur des couches déposées)",
+        ],
+        "parametres": [
+            "Teneur résiduelle moyenne des rejets",
+            "Tonnage cumulé stocké",
+            "Densité / pourcentage de solides de la pulpe résiduelle",
+            "Taux de récupération d'eau vers le circuit de procédé",
+            "Niveau piézométrique (suivi géotechnique de la digue, si instrumenté)",
+        ],
+        "anomalies": [
+            ("Teneur résiduelle anormalement élevée", "Signale une sous-performance du "
+             "circuit de récupération en amont (flottation, lixiviation...) : alerter le "
+             "métallurgiste — c'est aussi une donnée clé pour évaluer l'intérêt "
+             "économique d'un futur retraitement de cette zone du parc."),
+            ("Suintement, fissure ou tassement anormal de la digue", "Anomalie "
+             "géotechnique potentiellement grave : alerter immédiatement le responsable "
+             "HSE/géotechnique et suivre le plan d'urgence spécifique au parc à résidus, "
+             "sans attendre."),
+            ("Dérive du bilan hydrique (trop ou pas assez d'eau récupérée)", "Peut "
+             "indiquer un problème de décantation, une fuite, ou un déséquilibre du "
+             "circuit d'eau de procédé."),
+        ],
+        "securite": [
+            "La stabilité géotechnique d'un parc à résidus est un enjeu de sécurité "
+            "majeur : une rupture de digue peut avoir des conséquences catastrophiques "
+            "en aval (vies humaines, environnement). Toute anomalie structurelle est "
+            "signalée immédiatement, sans délai, quelle que soit son ampleur apparente.",
+            "Suivre strictement le plan de surveillance géotechnique du site (fréquence "
+            "d'inspection, instrumentation, seuils d'alerte).",
+            "Connaître et pouvoir déclencher sans délai le plan d'urgence spécifique au "
+            "parc à résidus (alerte, évacuation des zones en aval si applicable).",
+            "Accès au parc réglementé ; vigilance aux zones de dépôt actif et aux engins "
+            "de manœuvre des conduites de refoulement.",
+        ],
+    },
+    {
         "partie": "E — Rôles transversaux",
         "id": "E1",
         "titre": "Opérateur d'usine (généraliste)",
@@ -653,6 +706,7 @@ METIERS_BLOCS = [
     ("Opérateur d'usine (généraliste)", "A à E (parcours complet)"),
     ("Opérateur CIL/CIP", "C4"),
     ("Opérateur de procédé / process", "B, C, E2"),
+    ("Opérateur parc à résidus (tailings)", "D2"),
     ("Chef de poste / superviseur", "Parcours complet + module bilans (formation de cadrage)"),
 ]
 
@@ -671,6 +725,10 @@ METIERS_COMPETENCES = [
                               "à sa cause probable"),
     ("Opérateur d'usine (généraliste)", "Assurer une rotation efficace entre postes avec "
                                          "une vision d'ensemble du flowsheet"),
+    ("Opérateur parc à résidus (tailings)", "Assurer la surveillance géotechnique de base "
+                                             "du parc, suivre la teneur résiduelle, et "
+                                             "signaler sans délai toute anomalie "
+                                             "structurelle"),
 ]
 
 # Points de sécurité transversaux (Section 5 — HSE)
@@ -896,6 +954,24 @@ GLOSSAIRE_GRADE_CONTROL = [
                                    "traduisent en flux physiques réels vers le concassage "
                                    "(minerai) ou vers le terril (stérile) ; sert aussi au "
                                    "blending de tas de teneurs différentes."),
+    ("Tailings (résidus miniers)", "Rejets finaux du procédé de traitement (queues de "
+                                    "flottation, résidus de lixiviation), déposés dans un "
+                                    "parc à résidus. Conservent souvent une teneur "
+                                    "résiduelle non nulle, contrairement au stérile de mine, "
+                                    "ce qui peut justifier un retraitement futur."),
+    ("Parc à résidus (TSF — Tailings Storage Facility)", "Infrastructure (digue + bassin) "
+                                                          "où sont stockés les résidus du "
+                                                          "procédé ; sa stabilité "
+                                                          "géotechnique est un enjeu de "
+                                                          "sécurité majeur de l'industrie "
+                                                          "minière."),
+    ("Retraitement des résidus (tailings reprocessing)", "Traitement ultérieur de résidus "
+                                                           "déjà déposés, visant à récupérer "
+                                                           "une teneur résiduelle "
+                                                           "économiquement intéressante, "
+                                                           "souvent grâce à une technologie "
+                                                           "plus performante que celle "
+                                                           "utilisée à l'origine."),
 ]
 
 # Contenu de référence par module du programme (affichable dans l'onglet
