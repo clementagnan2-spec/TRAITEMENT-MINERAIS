@@ -52,6 +52,7 @@ def appliquer_icone(fenetre):
 
     lignes = [
         f"appliquer_icone() sur {fenetre}",
+        f"  sys.executable = {sys.executable}",
         f"  sys.frozen = {getattr(sys, 'frozen', False)}",
         f"  sys._MEIPASS = {getattr(sys, '_MEIPASS', '(non défini)')}",
         f"  ico_path = {ico_path}",

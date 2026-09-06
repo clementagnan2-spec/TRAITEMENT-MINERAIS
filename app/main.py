@@ -34,8 +34,9 @@ from ui_admin import OngletAdministration
 from formation_ui import FormationFrame
 
 APP_TITLE = "Gestion des opérations — Usine de traitement des minerais"
-CREDIT_TEXTE = ("Logiciel à usage de formation développé par Tagnan Clément : "
-                "clementagnan2@gmail.com")
+APP_BUILD = "Build 2026-09-06-18h"
+CREDIT_TEXTE = (f"Logiciel à usage de formation développé par Tagnan Clément : "
+                f"clementagnan2@gmail.com   —   {APP_BUILD}")
 BG = "#f4f6f5"
 ACCENT = "#2f6f4f"
 FONT_BASE = ("Segoe UI", 10)
