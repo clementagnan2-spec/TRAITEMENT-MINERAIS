@@ -44,28 +44,37 @@ COMPTE_CHARGE_DEFAUT = {"numero": "628", "libelle": "Autres services extérieurs
 
 # Classe 3 — comptes de stocks / en-cours de production, selon le libellé
 # du "stock_sortie" défini dans data_centres_cout.py pour chaque centre de
-# coût (31/32 approvisionnements, 33 en-cours de production de biens,
-# 35 stocks de produits).
+# coût. Racines SYSCOHADA (à ne pas confondre avec le PCG français, qui
+# numérote différemment) :
+#   31 Marchandises · 32 Matières premières et fournitures liées ·
+#   33 Autres approvisionnements · 34 Produits en cours · 35 Services en
+#   cours · 36 Produits finis · 37 Produits intermédiaires et résiduels.
 COMPTES_STOCKS = {
-    "ROM": {"numero": "321", "libelle": "Autres approvisionnements — Minerai ROM"},
-    "ROM disponible": {"numero": "321", "libelle": "Autres approvisionnements — Minerai ROM"},
-    "Concassé": {"numero": "331", "libelle": "En-cours de production — Minerai concassé"},
-    "Broyé": {"numero": "332", "libelle": "En-cours de production — Minerai broyé"},
-    "Concentré": {"numero": "333", "libelle": "En-cours de production — Concentré"},
+    "ROM": {"numero": "321", "libelle": "Matières premières et fournitures liées — Minerai ROM"},
+    "ROM disponible": {
+        "numero": "321", "libelle": "Matières premières et fournitures liées — Minerai ROM"
+    },
+    "Minerai": {"numero": "321", "libelle": "Matières premières et fournitures liées — Minerai"},
+    "Concassé": {"numero": "341", "libelle": "Produits en cours — Minerai concassé"},
+    "Broyé": {"numero": "342", "libelle": "Produits en cours — Minerai broyé"},
+    "Pulpe": {"numero": "343", "libelle": "Produits en cours — Pulpe"},
+    "Concentré": {"numero": "371", "libelle": "Produits intermédiaires — Concentré"},
     "Concentré/Rejets": {
-        "numero": "333", "libelle": "En-cours de production — Concentré / rejets"
+        "numero": "372", "libelle": "Produits intermédiaires et résiduels — Concentré/rejets"
     },
-    "Solution": {"numero": "334", "libelle": "En-cours de production — Solution"},
-    "Solution riche": {"numero": "334", "libelle": "En-cours de production — Solution riche"},
-    "Pulpe": {"numero": "332", "libelle": "En-cours de production — Pulpe"},
+    "Solution": {"numero": "373", "libelle": "Produits intermédiaires — Solution"},
+    "Solution riche": {"numero": "374", "libelle": "Produits intermédiaires — Solution riche"},
     "Produit intermédiaire": {
-        "numero": "335", "libelle": "En-cours de production — Produit intermédiaire"
+        "numero": "375", "libelle": "Produits intermédiaires — Produit intermédiaire"
     },
-    "Produit fini": {"numero": "351", "libelle": "Stocks de produits finis"},
-    "Minerai": {"numero": "321", "libelle": "Autres approvisionnements — Minerai"},
+    "Produit fini": {"numero": "361", "libelle": "Produits finis"},
+    "Métal raffiné": {"numero": "362", "libelle": "Produits finis — Métal raffiné"},
+    "Rejets stockés (tailings)": {
+        "numero": "377", "libelle": "Produits intermédiaires et résiduels — Rejets (tailings)"
+    },
 }
 
-COMPTE_STOCK_DEFAUT = {"numero": "33", "libelle": "En-cours de production de biens"}
+COMPTE_STOCK_DEFAUT = {"numero": "34", "libelle": "Produits en cours"}
 
 # Compte de contrepartie crédité lors de la valorisation en stock du coût
 # de production de la période (transfert de charges vers le bilan).

@@ -2,9 +2,10 @@
 """Administration des comptes utilisateurs — réservé au rôle admin."""
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 import db
+import excel_import
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_BASE = ("Segoe UI", 10)
@@ -79,6 +80,24 @@ class OngletAdministration(ttk.Frame):
             row=5, column=1, sticky="w", pady=10
         )
 
+        import_frame = ttk.LabelFrame(
+            self, text="Import de données d'exemple (Excel)", padding=12
+        )
+        import_frame.pack(fill="x", pady=(14, 0))
+        ttk.Label(
+            import_frame,
+            text="Téléchargez le modèle pour voir le format attendu (postes, types de flux, "
+                 "catégories de charges), remplissez-le, puis importez-le pour peupler "
+                 "rapidement les productions et les charges d'exploitation.",
+            font=FONT_BASE, wraplength=820,
+        ).pack(anchor="w", pady=(0, 8))
+        boutons_import = ttk.Frame(import_frame)
+        boutons_import.pack(anchor="w")
+        ttk.Button(boutons_import, text="Télécharger le modèle d'import (Excel)",
+                   command=self._telecharger_modele).pack(side="left", padx=(0, 8))
+        ttk.Button(boutons_import, text="Importer des données depuis Excel",
+                   command=self._importer_excel).pack(side="left")
+
         ttk.Label(self, text="Comptes existants", font=("Segoe UI", 12, "bold")).pack(
             anchor="w", pady=(14, 4)
         )
@@ -128,6 +147,61 @@ class OngletAdministration(ttk.Frame):
         if self.on_users_changed:
             self.on_users_changed()
         messagebox.showinfo("Créé", f"Compte « {identifiant} » créé avec succès.")
+
+    def _telecharger_modele(self):
+        chemin = filedialog.asksaveasfilename(
+            title="Enregistrer le modèle d'import",
+            defaultextension=".xlsx",
+            initialfile="modele_import_donnees.xlsx",
+            filetypes=[("Classeur Excel", "*.xlsx")],
+        )
+        if not chemin:
+            return
+        try:
+            excel_import.generer_modele(chemin)
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Impossible de créer le modèle.\n({e})")
+            return
+        db.log_audit(self.current_user["id"], "Téléchargement modèle d'import Excel", chemin)
+        messagebox.showinfo(
+            "Modèle créé",
+            "Le modèle a été enregistré avec les feuilles « Productions » et « Charges », "
+            "des exemples déjà remplis et des listes déroulantes pour les postes, types de "
+            "flux et catégories."
+        )
+
+    def _importer_excel(self):
+        chemin = filedialog.askopenfilename(
+            title="Choisir le fichier Excel à importer",
+            filetypes=[("Classeur Excel", "*.xlsx")],
+        )
+        if not chemin:
+            return
+        try:
+            resultat = excel_import.importer_fichier(chemin, self.current_user["id"])
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Impossible de lire ce fichier.\n({e})")
+            return
+
+        db.log_audit(
+            self.current_user["id"], "Import Excel de données",
+            f"{resultat['productions_importees']} production(s), "
+            f"{resultat['charges_importees']} charge(s), "
+            f"{len(resultat['erreurs'])} erreur(s) — {chemin}"
+        )
+
+        message = (
+            f"{resultat['productions_importees']} production(s) importée(s).\n"
+            f"{resultat['charges_importees']} charge(s) importée(s).\n\n"
+            "Déconnectez-vous puis reconnectez-vous pour voir les nouvelles lignes dans les "
+            "onglets Production & bilan matière et Coûts d'exploitation."
+        )
+        if resultat["erreurs"]:
+            apercu = "\n".join(resultat["erreurs"][:15])
+            if len(resultat["erreurs"]) > 15:
+                apercu += f"\n… et {len(resultat['erreurs']) - 15} autre(s)."
+            message += f"\n\n{len(resultat['erreurs'])} ligne(s) ignorée(s) :\n{apercu}"
+        messagebox.showinfo("Import terminé", message)
 
     def _selection_id(self):
         sel = self.tree.selection()

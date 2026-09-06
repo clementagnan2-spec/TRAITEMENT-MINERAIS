@@ -50,4 +50,10 @@ CENTRES_COUT_REF = [
     {"poste_id": "D1", "code_centre": "CC-D1", "compte_charge": "Charges de finition",
      "stock_entree": "Produit intermédiaire", "stock_sortie": "Produit fini",
      "methode_cout": "CMUP", "flux_sortie_defaut": "Produit fini"},
+    {"poste_id": "D2", "code_centre": "CC-D2", "compte_charge": "Charges de raffinage",
+     "stock_entree": "Produit fini", "stock_sortie": "Métal raffiné",
+     "methode_cout": "CMUP", "flux_sortie_defaut": "Produit fini"},
+    {"poste_id": "D3", "code_centre": "CC-D3", "compte_charge": "Charges de gestion des rejets",
+     "stock_entree": "Concentré/Rejets", "stock_sortie": "Rejets stockés (tailings)",
+     "methode_cout": "CMUP", "flux_sortie_defaut": "Stérile / rejet"},
 ]
