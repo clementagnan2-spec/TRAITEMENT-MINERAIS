@@ -271,6 +271,47 @@ QUIZ = [
 POSTES = [
     {
         "partie": "A — Fragmentation",
+        "id": "A0",
+        "titre": "ROM Pad (Grade Control)",
+        "description": "Aire de stockage du tout-venant (Run-of-Mine) en tas séparés, "
+                        "identifiés et classés selon les résultats du Grade Control, avant "
+                        "leur envoi au concassage. Point de contrôle où les décisions "
+                        "d'expédition minerai/stérile prises en amont (voir onglet « Grade "
+                        "Control ») se traduisent concrètement en flux physiques vers "
+                        "l'usine ou vers le terril.",
+        "controles": [
+            "Identification et étiquetage corrects de chaque tas (teneur, provenance, "
+            "statut Grade Control)",
+            "Vérification qu'aucun tas classé stérile n'est envoyé par erreur vers le "
+            "concassage",
+            "Contrôle visuel de l'absence de mélange accidentel entre tas adjacents",
+            "Arrosage / suppression des poussières sur les tas actifs",
+        ],
+        "parametres": [
+            "Teneur moyenne du tas (issue du Grade Control)",
+            "Tonnage disponible par tas",
+            "Humidité du tas (impact sur le transport et le collage en trémie)",
+            "Nombre de tas actifs simultanément",
+        ],
+        "anomalies": [
+            ("Tas mal identifié ou étiquette manquante", "Suspendre le chargement du tas "
+             "concerné jusqu'à confirmation de sa classification par le Grade Control."),
+            ("Mélange accidentel haute teneur / basse teneur ou stérile", "Alerter "
+             "immédiatement le géologue Grade Control ; peut fausser durablement le bilan "
+             "usine si non détecté à temps."),
+            ("Écart important entre la teneur du tas et la teneur reçue en usine",
+             "Signale un possible défaut d'échantillonnage, de mélange sur le tas, ou une "
+             "erreur de reprise (chargement au mauvais endroit du tas)."),
+        ],
+        "securite": [
+            "Vigilance aux engins de reprise (chargeuses) circulant sur le pad : zones de "
+            "circulation et de stockage bien délimitées.",
+            "Stabilité des tas : ne pas creuser en sous-cave (risque d'effondrement).",
+            "Port des EPI standard chantier (casque, gilet, chaussures de sécurité).",
+        ],
+    },
+    {
+        "partie": "A — Fragmentation",
         "id": "A1",
         "titre": "Circuit de concassage",
         "description": "Réduit le tout-venant extrait de la mine à une granulométrie "
@@ -606,6 +647,7 @@ POSTES = [
 
 # Table métier → blocs recommandés (issue de la formation opérationnelle)
 METIERS_BLOCS = [
+    ("Opérateur ROM Pad / Grade Control", "A0, module Grade Control"),
     ("Opérateur concasseur", "A1, A3"),
     ("Opérateur broyeur", "A2, A4"),
     ("Opérateur d'usine (généraliste)", "A à E (parcours complet)"),
@@ -616,6 +658,9 @@ METIERS_BLOCS = [
 
 # Table métier → compétence opérationnelle visée en fin de parcours
 METIERS_COMPETENCES = [
+    ("Opérateur ROM Pad / Grade Control", "Identifier et gérer les tas selon leur "
+                                           "classification Grade Control, détecter tout "
+                                           "risque de mélange ou d'erreur d'expédition"),
     ("Opérateur concasseur", "Conduire le circuit de concassage en autonomie et détecter "
                               "les anomalies courantes"),
     ("Opérateur broyeur", "Maintenir les paramètres de broyage dans leur plage cible et "
@@ -846,9 +891,11 @@ GLOSSAIRE_GRADE_CONTROL = [
     ("Sondage de production", "Forage rapproché réalisé spécifiquement pour le Grade "
                                "Control, à une maille beaucoup plus dense que les sondages "
                                "d'exploration, pour guider l'excavation à court terme."),
-    ("Contact minerai/stérile", "Limite géologique ou géométrique séparant une zone "
-                                 "minéralisée d'une zone stérile ; sa bonne interprétation "
-                                 "conditionne la précision du Grade Control."),
+    ("ROM Pad (Run-of-Mine Pad)", "Aire de stockage du tout-venant en tas séparés et "
+                                   "identifiés, où les décisions du Grade Control se "
+                                   "traduisent en flux physiques réels vers le concassage "
+                                   "(minerai) ou vers le terril (stérile) ; sert aussi au "
+                                   "blending de tas de teneurs différentes."),
 ]
 
 # Contenu de référence par module du programme (affichable dans l'onglet

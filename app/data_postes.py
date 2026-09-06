@@ -12,6 +12,9 @@ supprimés automatiquement, pour ne pas perdre l'historique).
 """
 
 POSTES_REF = [
+    {"id": "A0", "partie": "A — Fragmentation", "titre": "ROM Pad (Grade Control)",
+     "parametres": [("Teneur moyenne du tas", "%"), ("Tonnage disponible du tas", "t"),
+                    ("Humidité du tas", "%"), ("Nombre de tas actifs", "")]},
     {"id": "A1", "partie": "A — Fragmentation", "titre": "Circuit de concassage",
      "parametres": [("Intensité électrique moteur", "A"), ("Débit d'alimentation", "t/h"),
                     ("Granulométrie de sortie (P80)", "mm")]},
