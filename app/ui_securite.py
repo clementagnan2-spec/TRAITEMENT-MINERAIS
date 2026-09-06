@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from data_postes import POSTES_REF
+from data_mine_types import postes_pour_type
 from data_formation import SECURITE_HSE
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
@@ -42,6 +42,7 @@ class _OngletLoto(ttk.Frame):
     def __init__(self, parent, current_user):
         super().__init__(parent, padding=12)
         self.current_user = current_user
+        self.postes_ref = postes_pour_type(db.get_type_mine())
 
         form = ttk.LabelFrame(self, text="Verrouiller un équipement", padding=12)
         form.pack(fill="x", pady=(0, 10))
@@ -60,7 +61,7 @@ class _OngletLoto(ttk.Frame):
         self.poste_var = tk.StringVar()
         ttk.Combobox(
             form, textvariable=self.poste_var, state="readonly", width=32, font=FONT_BASE,
-            values=["—"] + [f"{p['id']} — {p['titre']}" for p in POSTES_REF]
+            values=["—"] + [f"{p['id']} — {p['titre']}" for p in self.postes_ref]
         ).grid(row=1, column=1, pady=4, sticky="w")
 
         ttk.Label(form, text="Motif :", font=FONT_BASE).grid(

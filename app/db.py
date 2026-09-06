@@ -134,6 +134,11 @@ CREATE TABLE IF NOT EXISTS journal_audit (
     action TEXT NOT NULL,
     details TEXT
 );
+
+CREATE TABLE IF NOT EXISTS configuration (
+    cle TEXT PRIMARY KEY,
+    valeur TEXT
+);
 """
 
 
@@ -185,6 +190,39 @@ def log_audit(user_id, action, details=""):
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------
+# Configuration du site (paramètres clé/valeur, ex. type de mine actif)
+# ---------------------------------------------------------------------
+def get_configuration(cle, defaut=None):
+    conn = get_connection()
+    row = conn.execute("SELECT valeur FROM configuration WHERE cle = ?", (cle,)).fetchone()
+    conn.close()
+    return row["valeur"] if row is not None else defaut
+
+
+def set_configuration(cle, valeur):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO configuration (cle, valeur) VALUES (?, ?) "
+        "ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
+        (cle, valeur),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_type_mine():
+    """Retourne le type de mine actif du site (nom du profil dans
+    data_mine_types.MINE_TYPES). Import différé pour éviter tout cycle
+    d'import avec data_mine_types (qui importe data_postes, pas db)."""
+    from data_mine_types import DEFAUT
+    return get_configuration("type_mine", DEFAUT)
+
+
+def set_type_mine(type_mine):
+    set_configuration("type_mine", type_mine)
 
 
 # ---------------------------------------------------------------------

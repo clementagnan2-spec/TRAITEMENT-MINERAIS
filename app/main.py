@@ -148,7 +148,9 @@ class Application(tk.Tk):
 
         if role in ROLES_ADMIN:
             notebook.add(
-                OngletAdministration(notebook, self.current_user), text="  Administration  "
+                OngletAdministration(notebook, self.current_user,
+                                      on_users_changed=self._construire_application_principale),
+                text="  Administration  "
             )
 
         notebook.add(FormationFrame(notebook), text="  Formation  ")

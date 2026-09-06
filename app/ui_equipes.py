@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from data_postes import POSTES_REF
+from data_mine_types import postes_pour_type
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_BASE = ("Segoe UI", 10)
@@ -20,6 +20,7 @@ class OngletEquipes(ttk.Frame):
     def __init__(self, parent, current_user):
         super().__init__(parent, padding=16)
         self.current_user = current_user
+        self.postes_ref = postes_pour_type(db.get_type_mine())
 
         ttk.Label(self, text="Gestion des équipes — affectations", font=FONT_TITLE,
                   foreground=ACCENT).pack(anchor="w")
@@ -46,7 +47,7 @@ class OngletEquipes(ttk.Frame):
         self.poste_var = tk.StringVar()
         ttk.Combobox(
             form, textvariable=self.poste_var, state="readonly", width=32, font=FONT_BASE,
-            values=[f"{p['id']} — {p['titre']}" for p in POSTES_REF]
+            values=[f"{p['id']} — {p['titre']}" for p in self.postes_ref]
         ).grid(row=1, column=1, pady=4, sticky="w")
 
         ttk.Label(form, text="Date (AAAA-MM-JJ) :", font=FONT_BASE).grid(
