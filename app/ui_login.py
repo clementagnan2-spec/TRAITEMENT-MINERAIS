@@ -5,7 +5,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from icon_utils import appliquer_icone
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_BASE = ("Segoe UI", 10)
@@ -82,7 +81,6 @@ class DialogueChangerMotDePasse(tk.Toplevel):
         self.title("Changer le mot de passe")
         self.resizable(True, True)
         self.grab_set()
-        appliquer_icone(self)
 
         cadre = ttk.Frame(self, padding=20)
         cadre.pack(fill="both", expand=True)

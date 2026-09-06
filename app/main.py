@@ -21,7 +21,6 @@ from tkinter import ttk
 
 import db
 from data_postes import POSTES_REF
-from icon_utils import appliquer_icone
 from ui_login import EcranConnexion, DialogueChangerMotDePasse
 from ui_dashboard import OngletTableauDeBord
 from ui_releves import OngletReleves
@@ -78,8 +77,6 @@ class Application(tk.Tk):
         db.init_db(POSTES_REF)
 
         self.current_user = None
-
-        appliquer_icone(self)
 
         credit = tk.Label(
             self, text=CREDIT_TEXTE, font=("Segoe UI", 8), bg="#2f6f4f", fg="#ffffff",
