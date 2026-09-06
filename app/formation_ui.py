@@ -2,12 +2,14 @@
 """
 Traitement des Minerais — Boîte à outils du minéralurgiste
 ============================================================
-Application de bureau (Tkinter) construite à partir de deux programmes de
+Application de bureau (Tkinter) construite à partir de trois programmes de
 formation :
   1. "Traitement des Minerais — De la caractérisation du gisement au
      flowsheet industriel" (formation de cadrage)
   2. "Programme de Formation Opérationnelle — Métiers de l'Usine de
      Traitement" (formation opérationnelle, par poste et par circuit)
+  3. "Grade Control — Contrôle de teneurs minières" (Datamine Studio RM,
+     mine à ciel ouvert & souterraine)
 
 Modules :
   1. Glossaire (recherche)
@@ -17,7 +19,8 @@ Modules :
   5. Diagnostic flottation (formation de cadrage)
   6. Postes & Métiers — fiches de poste par circuit (opérationnel)
   7. Sécurité (HSE) — points de sécurité transversaux
-  8. Quiz de validation des connaissances (les deux formations)
+  8. Grade Control — modules de référence + calculateur de teneur de coupure
+  9. Quiz de validation des connaissances (les trois formations)
 
 Lancer avec :  python main.py
 """
@@ -31,12 +34,16 @@ from data_formation import (
     DIAGNOSTIC_FLOTTATION,
     QUIZ,
     QUIZ_OPERATIONS,
+    QUIZ_GRADE_CONTROL,
     POSTES,
     METIERS_BLOCS,
     METIERS_COMPETENCES,
     SECURITE_HSE,
+    GRADE_CONTROL_MODULES,
+    calculer_teneur_coupure,
     suggerer_methode,
 )
+
 
 APP_TITLE = "Traitement des Minerais — Boîte à outils du minéralurgiste"
 BG = "#f4f6f5"
@@ -617,15 +624,148 @@ class OngletSecurite(ttk.Frame):
 
 
 # ----------------------------------------------------------------------
+# Onglet Grade Control — fiches de référence par module + calculateur de
+# teneur de coupure économique
+# ----------------------------------------------------------------------
+class OngletGradeControl(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.configure(padding=16)
+
+        ttk.Label(self, text="Grade Control — Contrôle de teneurs minières", font=FONT_TITLE).pack(
+            anchor="w"
+        )
+        ttk.Label(
+            self,
+            text="Référence des modules du programme (Datamine Studio RM, ciel ouvert & "
+                 "souterrain) et calculateur de teneur de coupure économique.",
+            font=FONT_BASE, wraplength=780,
+        ).pack(anchor="w", pady=(4, 10))
+
+        sous_notebook = ttk.Notebook(self)
+        sous_notebook.pack(fill="both", expand=True)
+
+        sous_notebook.add(_OngletModulesGC(sous_notebook), text="Modules de référence")
+        sous_notebook.add(_OngletCutoff(sous_notebook), text="Calculateur de teneur de coupure")
+
+
+class _OngletModulesGC(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=12)
+        container = ScrollableFrame(self)
+        container.pack(fill="both", expand=True)
+
+        for m in GRADE_CONTROL_MODULES:
+            bloc = ttk.Frame(container.body, padding=(4, 8))
+            bloc.pack(fill="x", anchor="w")
+            ttk.Label(bloc, text=f"{m['id']} — {m['titre']}", font=FONT_H2,
+                      foreground=ACCENT).pack(anchor="w")
+            for point in m["points"]:
+                ttk.Label(
+                    bloc, text=f"• {point}", font=FONT_BASE, wraplength=740, justify="left"
+                ).pack(anchor="w", padx=(10, 0), pady=1)
+            ttk.Separator(container.body).pack(fill="x", pady=4)
+
+
+class _OngletCutoff(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=16)
+
+        ttk.Label(
+            self,
+            text="Teneur de coupure = (coût minier + coût de traitement + autres coûts) / "
+                 "(prix du métal x récupération métallurgique)",
+            font=FONT_BASE, wraplength=760, justify="left",
+        ).pack(anchor="w", pady=(0, 14))
+        ttk.Label(
+            self,
+            text="Outil pédagogique (Module 6) — pas un calcul officiel de coupure de "
+                 "réserve. Veillez à garder des unités cohérentes entre coûts, prix du "
+                 "métal et teneur obtenue.",
+            font=("Segoe UI", 9, "italic"), foreground="#777777", wraplength=760,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 14))
+
+        form = ttk.Frame(self)
+        form.pack(anchor="w")
+
+        self.cout_minier = tk.StringVar(value="12")
+        self.cout_traitement = tk.StringVar(value="18")
+        self.autres_couts = tk.StringVar(value="0")
+        self.prix_metal = tk.StringVar(value="1800")
+        self.recuperation = tk.StringVar(value="90")
+
+        champs = [
+            ("Coût minier ($/t)", self.cout_minier),
+            ("Coût de traitement ($/t)", self.cout_traitement),
+            ("Autres coûts ($/t, optionnel)", self.autres_couts),
+            ("Prix du métal ($/unité de teneur)", self.prix_metal),
+            ("Récupération métallurgique (%)", self.recuperation),
+        ]
+        for i, (label, var) in enumerate(champs):
+            ttk.Label(form, text=label, font=FONT_BASE).grid(
+                row=i, column=0, sticky="w", pady=4, padx=(0, 10)
+            )
+            ttk.Entry(form, textvariable=var, width=14, font=FONT_BASE).grid(
+                row=i, column=1, pady=4
+            )
+
+        ttk.Button(self, text="Calculer la teneur de coupure", command=self._calculer).pack(
+            anchor="w", pady=14
+        )
+
+        self.resultat = tk.Text(
+            self, height=6, width=90, font=FONT_MONO, bg="#ffffff", relief="solid",
+            borderwidth=1, wrap="word"
+        )
+        self.resultat.pack(fill="both", expand=True)
+        self.resultat.configure(state="disabled")
+
+    def _ecrire(self, texte):
+        self.resultat.configure(state="normal")
+        self.resultat.delete("1.0", "end")
+        self.resultat.insert("end", texte)
+        self.resultat.configure(state="disabled")
+
+    def _calculer(self):
+        try:
+            cm = float(self.cout_minier.get().replace(",", "."))
+            ct = float(self.cout_traitement.get().replace(",", "."))
+            ac = float(self.autres_couts.get().replace(",", ".") or 0)
+            pm = float(self.prix_metal.get().replace(",", "."))
+            rec = float(self.recuperation.get().replace(",", "."))
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez saisir des nombres valides.")
+            return
+
+        try:
+            cutoff = calculer_teneur_coupure(cm, ct, pm, rec, autres_couts=ac)
+        except ValueError as e:
+            messagebox.showerror("Erreur", str(e))
+            return
+
+        texte = (
+            f"Teneur de coupure économique ≈ {cutoff:.4f}\n\n"
+            f"(coût minier {cm} + coût traitement {ct} + autres coûts {ac}) / "
+            f"(prix métal {pm} x récupération {rec}%)\n\n"
+            f"Tout bloc du modèle dont la teneur estimée est ≥ {cutoff:.4f} peut être "
+            f"classé Ore (minerai) ; en dessous, Waste (stérile) — sous réserve des "
+            f"règles de sélectivité géométrique propres au projet (Modules 7 et 8)."
+        )
+        self._ecrire(texte)
+
+
+# ----------------------------------------------------------------------
 # Onglet 8 — Quiz
 # ----------------------------------------------------------------------
 class OngletQuiz(ttk.Frame):
-    CATEGORIES = ["Les deux formations", "Formation de cadrage", "Formation opérationnelle"]
+    CATEGORIES = ["Toutes les formations", "Formation de cadrage", "Formation opérationnelle",
+                  "Grade Control"]
 
     def __init__(self, parent):
         super().__init__(parent)
         self.configure(padding=16)
-        self.banque = list(QUIZ) + list(QUIZ_OPERATIONS)
+        self.banque = list(QUIZ) + list(QUIZ_OPERATIONS) + list(QUIZ_GRADE_CONTROL)
         self.questions = list(self.banque)
         self.index = 0
         self.score = 0
@@ -675,12 +815,10 @@ class OngletQuiz(ttk.Frame):
 
     def _recommencer(self):
         choix = self.categorie_var.get()
-        if choix == "Formation de cadrage":
-            self.questions = [q for q in self.banque if q["categorie"] == "Formation de cadrage"]
-        elif choix == "Formation opérationnelle":
-            self.questions = [q for q in self.banque if q["categorie"] == "Formation opérationnelle"]
-        else:
+        if choix == "Toutes les formations":
             self.questions = list(self.banque)
+        else:
+            self.questions = [q for q in self.banque if q["categorie"] == choix]
         random.shuffle(self.questions)
         self.index = 0
         self.score = 0
@@ -774,4 +912,5 @@ class FormationFrame(ttk.Frame):
         sous_notebook.add(OngletDiagnostic(sous_notebook), text="Diagnostic flottation")
         sous_notebook.add(OngletPostes(sous_notebook), text="Postes & Métiers")
         sous_notebook.add(OngletSecurite(sous_notebook), text="Sécurité (HSE) — référence")
+        sous_notebook.add(OngletGradeControl(sous_notebook), text="Grade Control")
         sous_notebook.add(OngletQuiz(sous_notebook), text="Quiz")

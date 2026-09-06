@@ -789,3 +789,342 @@ QUIZ_OPERATIONS = [
                         "immédiate selon la procédure d'urgence, jamais un report.",
     },
 ]
+
+# ========================================================================
+# CONTENU GRADE CONTROL — issu du programme "Grade Control — Contrôle de
+# teneurs minières" (Datamine Studio RM, mine à ciel ouvert & souterraine)
+# ========================================================================
+
+# Termes de glossaire spécifiques au Grade Control, à fusionner avec le
+# glossaire général au chargement de l'application.
+GLOSSAIRE_GRADE_CONTROL = [
+    ("Grade Control", "Ensemble des méthodes utilisées pour délimiter, au moment de "
+                       "l'exploitation, les zones de minerai et de stérile réellement "
+                       "envoyées respectivement à l'usine et au terril, à partir de données "
+                       "de production (forages de production, échantillonnage rapproché)."),
+    ("Resource Modeling", "Modélisation de la ressource à l'échelle du gisement, en amont du "
+                           "Grade Control : s'appuie sur des données de sondage plus espacées "
+                           "et vise à estimer les tonnages/teneurs globaux, pas à guider "
+                           "l'excavation bloc par bloc au jour le jour."),
+    ("Modèle de blocs (Block Model)", "Découpage du gisement en blocs 3D réguliers, chacun "
+                                       "porteur d'attributs (teneur estimée, densité, domaine "
+                                       "géologique, classification Ore/Waste...)."),
+    ("Domaine géologique", "Zone du gisement définie par des caractéristiques géologiques "
+                            "homogènes (lithologie, altération, structure), à l'intérieur de "
+                            "laquelle l'estimation des teneurs est réalisée séparément."),
+    ("Wireframe", "Surface 3D filaire délimitant un volume géologique (corps minéralisé, "
+                  "domaine, topographie), utilisée pour coder le modèle de blocs."),
+    ("Nearest Neighbour (plus proche voisin)", "Méthode d'estimation la plus simple : "
+                                                "chaque bloc reçoit la teneur de l'échantillon "
+                                                "le plus proche, sans pondération ni lissage."),
+    ("Inverse Distance (distance inverse)", "Méthode d'estimation qui pondère les "
+                                             "échantillons voisins par l'inverse de leur "
+                                             "distance (souvent élevée à une puissance) au "
+                                             "bloc à estimer."),
+    ("Krigeage", "Méthode d'estimation géostatistique qui pondère les échantillons voisins "
+                 "en tenant compte à la fois de leur distance et de leur corrélation "
+                 "spatiale (variogramme), pour produire l'estimateur linéaire non biaisé de "
+                 "variance minimale."),
+    ("Variogramme", "Outil géostatistique qui quantifie comment la ressemblance entre deux "
+                     "échantillons diminue avec la distance qui les sépare ; sert de base "
+                     "au krigeage."),
+    ("Teneur de coupure (Cut-off Grade)", "Teneur seuil séparant ce qui est envoyé à l'usine "
+                                           "(minerai) de ce qui est envoyé au terril "
+                                           "(stérile) ; déterminée à partir des coûts "
+                                           "opératoires, du prix du métal et de la "
+                                           "récupération métallurgique."),
+    ("Ore / Minerai (Grade Control)", "Bloc dont la teneur estimée est supérieure ou égale à "
+                                       "la teneur de coupure : destiné au traitement."),
+    ("Waste / Stérile (Grade Control)", "Bloc dont la teneur estimée est inférieure à la "
+                                         "teneur de coupure : destiné au terril."),
+    ("Dilution (minière)", "Incorporation involontaire de stérile dans le minerai extrait "
+                            "(ou l'inverse), du fait des limites pratiques de sélectivité de "
+                            "l'excavation ; fait baisser la teneur réellement traitée par "
+                            "rapport à la teneur du modèle de blocs."),
+    ("Perte de minerai (Ore Loss)", "Minerai laissé en place ou envoyé par erreur au terril "
+                                     "du fait des limites de sélectivité de l'exploitation."),
+    ("Sondage de production", "Forage rapproché réalisé spécifiquement pour le Grade "
+                               "Control, à une maille beaucoup plus dense que les sondages "
+                               "d'exploration, pour guider l'excavation à court terme."),
+    ("Contact minerai/stérile", "Limite géologique ou géométrique séparant une zone "
+                                 "minéralisée d'une zone stérile ; sa bonne interprétation "
+                                 "conditionne la précision du Grade Control."),
+]
+
+# Contenu de référence par module du programme (affichable dans l'onglet
+# Grade Control, façon fiche de cours consultable).
+GRADE_CONTROL_MODULES = [
+    {
+        "id": "M1",
+        "titre": "Introduction au Grade Control",
+        "points": [
+            "Définition et rôle du Grade Control dans une exploitation minière",
+            "Différence avec l'Exploration et le Resource Modeling : le Grade Control "
+            "opère à l'échelle de la production à court terme, avec des données plus "
+            "denses",
+            "Conséquences d'un mauvais contrôle de teneurs : dilution excessive, pertes "
+            "de minerai, mauvaise réconciliation usine/modèle",
+            "Le Grade Control fait le pont entre Géologie, Mine Planning et Production",
+        ],
+    },
+    {
+        "id": "M2",
+        "titre": "Données et échantillonnage",
+        "points": [
+            "Types de données : sondages de production, échantillonnage de rainures/faces, "
+            "résultats d'analyses",
+            "Contrôle qualité des données avant utilisation (cohérence, doublons, valeurs "
+            "aberrantes)",
+            "Identification et traitement des valeurs aberrantes (« outliers ») avant "
+            "estimation, pour ne pas fausser localement le modèle",
+        ],
+    },
+    {
+        "id": "M3",
+        "titre": "Compréhension de la minéralisation",
+        "points": [
+            "Interprétation des domaines géologiques et des contacts minerai/stérile",
+            "Notion de continuité de la minéralisation dans l'espace",
+            "La géologie doit guider le Grade Control, pas l'inverse : un modèle "
+            "statistiquement propre mais géologiquement incohérent reste faux",
+        ],
+    },
+    {
+        "id": "M4",
+        "titre": "Modèle de blocs et Grade Control",
+        "points": [
+            "Structure d'un Block Model : blocs réguliers 3D porteurs d'attributs",
+            "Codage des domaines géologiques dans le modèle à partir des wireframes",
+            "Classification des blocs selon les critères du projet (teneur, domaine, "
+            "confiance de l'estimation)",
+        ],
+    },
+    {
+        "id": "M5",
+        "titre": "Estimation des teneurs",
+        "points": [
+            "Nearest Neighbour : simple mais grossier, sensible à la position exacte des "
+            "échantillons",
+            "Inverse Distance : pondération par distance, plus lisse, ne tient pas compte "
+            "de la corrélation spatiale réelle",
+            "Krigeage : s'appuie sur le variogramme, généralement la méthode de référence "
+            "quand les données le permettent",
+            "La densité des données de sondage conditionne fortement la fiabilité de "
+            "l'estimation, quelle que soit la méthode",
+        ],
+    },
+    {
+        "id": "M6",
+        "titre": "Définition de la teneur de coupure",
+        "points": [
+            "La teneur de coupure a un rôle économique : elle sépare ce qui couvre ses "
+            "coûts de traitement de ce qui n'en couvre pas",
+            "Formule usuelle simplifiée : Cut-off = (coût minier + coût de traitement) / "
+            "(prix du métal x récupération métallurgique)",
+            "Un projet peut définir plusieurs catégories de minerai (haute/basse teneur) "
+            "selon sa stratégie de traitement",
+        ],
+    },
+    {
+        "id": "M7",
+        "titre": "Grade Control à ciel ouvert",
+        "points": [
+            "Définition des limites minerai/stérile à l'échelle des bancs (benches) "
+            "d'exploitation",
+            "Création de polygones de Grade Control guidant directement les opérateurs "
+            "d'engins",
+            "Gestion de la dilution géométrique liée à la sélectivité des équipements "
+            "(largeur de godet, précision GPS des engins)",
+        ],
+    },
+    {
+        "id": "M8",
+        "titre": "Grade Control en mine souterraine",
+        "points": [
+            "Données issues de forages et échantillonnages souterrains, souvent plus "
+            "contraints géométriquement qu'à ciel ouvert",
+            "Application du Grade Control aux structures minéralisées (veines, filons) : "
+            "sélectivité souvent plus fine mais accès plus limité",
+            "Gestion de la dilution propre au souterrain (débourrage des épontes, "
+            "sur-creusement)",
+        ],
+    },
+    {
+        "id": "M9",
+        "titre": "Grade Control avec Datamine Studio RM",
+        "points": [
+            "Chaîne de travail logicielle : préparation projet → import des données → "
+            "visualisation 3D → wireframes → modèle de blocs → codage → estimation → "
+            "cut-off → classification Ore/Waste → extraction des résultats",
+            "Chaque étape logicielle correspond à une étape méthodologique du Grade "
+            "Control ; l'outil ne remplace pas la compréhension géologique en amont",
+        ],
+    },
+    {
+        "id": "M10",
+        "titre": "Interprétation et contrôle des résultats",
+        "points": [
+            "Contrôle de cohérence des teneurs estimées par rapport aux données brutes",
+            "Identification des anomalies (teneurs isolées extrêmes, discontinuités "
+            "suspectes aux limites de domaines)",
+            "Contrôle des limites Ore/Waste avant transmission à la production",
+        ],
+    },
+    {
+        "id": "M11",
+        "titre": "Projet pratique complet",
+        "points": [
+            "Enchaînement de bout en bout : données géologiques → préparation → "
+            "modélisation → estimation → cut-off → Ore/Waste → visualisation → "
+            "interprétation → résultats",
+            "Objectif : reproduire en conditions proches du réel un cycle complet de "
+            "Grade Control",
+        ],
+    },
+    {
+        "id": "M12",
+        "titre": "Application professionnelle",
+        "points": [
+            "Organisation du travail de Grade Control en entreprise : cycle récurrent "
+            "(souvent quotidien ou hebdomadaire) aligné sur le planning de production",
+            "Collaboration étroite entre Géologue, Mine Planning et Production : le Grade "
+            "Control n'a de valeur que s'il est utilisé à temps par les équipes terrain",
+            "Bonnes pratiques : traçabilité des versions de modèle, documentation des "
+            "hypothèses de cut-off, contrôle systématique avant diffusion",
+            "Erreur fréquente à éviter : figer un cut-off une fois pour toutes sans le "
+            "reconsidérer quand les prix métaux ou les coûts opératoires changent "
+            "significativement",
+        ],
+    },
+]
+
+
+def calculer_teneur_coupure(cout_minier, cout_traitement, prix_metal, recuperation_pct,
+                             autres_couts=0.0):
+    """Calcule une teneur de coupure économique simplifiée (Module 6).
+
+    cout_minier, cout_traitement, autres_couts : coûts par tonne traitée, dans la même
+        devise que prix_metal (ex. $/t)
+    prix_metal : prix de vente net du métal, par unité de teneur cohérente avec la
+        teneur recherchée (ex. $/once, $/tonne de métal contenu, selon convention)
+    recuperation_pct : récupération métallurgique attendue, en %
+
+    Retourne la teneur de coupure dans l'unité cohérente avec prix_metal (ex. si prix_metal
+    est en $ par tonne de métal contenu, le résultat est une teneur en fraction/tonne ;
+    à adapter aux conventions du projet — cet outil est pédagogique, pas un calcul officiel
+    de coupure de réserve).
+    """
+    if prix_metal <= 0 or recuperation_pct <= 0:
+        raise ValueError("Le prix du métal et la récupération doivent être strictement "
+                          "positifs.")
+    couts_totaux = cout_minier + cout_traitement + autres_couts
+    return couts_totaux / (prix_metal * recuperation_pct / 100)
+
+
+QUIZ_GRADE_CONTROL = [
+    {
+        "categorie": "Grade Control",
+        "question": "Quelle est la principale différence entre le Resource Modeling et le "
+                     "Grade Control ?",
+        "choices": [
+            "Ce sont exactement la même chose",
+            "Le Grade Control utilise des données de production plus denses pour guider "
+            "l'excavation à court terme, contrairement au Resource Modeling à l'échelle "
+            "du gisement",
+            "Le Resource Modeling ne sert qu'en mine souterraine",
+            "Le Grade Control ne concerne que la phase d'exploration",
+        ],
+        "correct": 1,
+        "explication": "Le Grade Control s'appuie sur des sondages de production "
+                        "rapprochés pour guider l'excavation au jour le jour, alors que le "
+                        "Resource Modeling estime la ressource globale à partir de données "
+                        "de sondage plus espacées.",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "Un bloc dont la teneur estimée est inférieure à la teneur de coupure "
+                     "est classé...",
+        "choices": ["Ore / Minerai", "Waste / Stérile", "Toujours en attente d'analyse",
+                    "Automatiquement en minerai haute teneur"],
+        "correct": 1,
+        "explication": "Par définition, la teneur de coupure sépare le minerai (teneur ≥ "
+                        "cut-off) du stérile (teneur < cut-off).",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "Parmi ces méthodes d'estimation, laquelle s'appuie explicitement sur "
+                     "un variogramme (corrélation spatiale) ?",
+        "choices": ["Nearest Neighbour", "Inverse Distance", "Krigeage",
+                    "Aucune des trois"],
+        "correct": 2,
+        "explication": "Le krigeage utilise le variogramme pour pondérer les échantillons "
+                        "en tenant compte à la fois de la distance et de la structure "
+                        "spatiale de la minéralisation, contrairement au plus proche voisin "
+                        "ou à la distance inverse.",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "Qu'est-ce que la dilution minière ?",
+        "choices": [
+            "Une méthode d'estimation des teneurs",
+            "L'incorporation involontaire de stérile dans le minerai extrait, qui fait "
+            "baisser la teneur réellement traitée",
+            "Un réactif utilisé en flottation",
+            "La densité de forage utilisée pour le Grade Control",
+        ],
+        "correct": 1,
+        "explication": "La dilution résulte des limites pratiques de sélectivité de "
+                        "l'excavation (largeur de godet, précision de guidage) et fait "
+                        "baisser la teneur réellement envoyée à l'usine par rapport à celle "
+                        "du modèle de blocs.",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "En Grade Control à ciel ouvert, à quelle échelle les limites "
+                     "minerai/stérile sont-elles typiquement définies ?",
+        "choices": ["À l'échelle du gisement entier, une fois pour toutes",
+                    "À l'échelle des bancs d'exploitation (benches), via des polygones "
+                    "guidant les engins",
+                    "Uniquement a posteriori, après traitement en usine",
+                    "Elles ne sont jamais définies à ciel ouvert"],
+        "correct": 1,
+        "explication": "Le Grade Control à ciel ouvert produit des polygones à l'échelle "
+                        "des bancs d'exploitation, directement utilisables par les "
+                        "opérateurs d'engins sur le terrain.",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "Pourquoi la teneur de coupure ne doit-elle pas être figée une fois "
+                     "pour toutes ?",
+        "choices": [
+            "Parce que la réglementation minière l'interdit",
+            "Parce qu'elle dépend du prix du métal et des coûts opératoires, qui varient "
+            "dans le temps",
+            "Parce qu'elle doit changer tous les jours par principe",
+            "Parce que Datamine Studio RM la recalcule automatiquement",
+        ],
+        "correct": 1,
+        "explication": "La teneur de coupure économique dépend directement des coûts "
+                        "miniers et de traitement ainsi que du prix du métal ; une "
+                        "variation significative de ces paramètres justifie de la "
+                        "reconsidérer.",
+    },
+    {
+        "categorie": "Grade Control",
+        "question": "Dans la chaîne de travail Grade Control sous Datamine Studio RM, "
+                     "que fait-on juste avant d'appliquer le cut-off ?",
+        "choices": [
+            "L'extraction finale des résultats",
+            "L'estimation des teneurs dans le modèle de blocs",
+            "L'importation brute des données de sondage, sans autre étape",
+            "La classification Ore/Waste",
+        ],
+        "correct": 1,
+        "explication": "La séquence logique est : préparation → import → wireframes → "
+                        "modèle de blocs → codage → ESTIMATION des teneurs → application "
+                        "du CUT-OFF → classification Ore/Waste → extraction.",
+    },
+]
+
+# Le glossaire général intègre aussi les termes spécifiques au Grade Control.
+GLOSSAIRE = GLOSSAIRE + GLOSSAIRE_GRADE_CONTROL
