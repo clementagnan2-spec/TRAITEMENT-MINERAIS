@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Utilitaire partagé pour localiser les ressources embarquées et appliquer
-l'icône de l'application (lingot d'or) à n'importe quelle fenêtre Tk —
+l'icône de l'application (camion minier) à n'importe quelle fenêtre Tk —
 fenêtre principale ou boîtes de dialogue secondaires (Toplevel)."""
 
 import os
@@ -24,11 +24,11 @@ def resource_path(chemin_relatif):
 
 
 def appliquer_icone(fenetre):
-    """Applique l'icône lingot d'or à la fenêtre donnée (Tk ou Toplevel).
-    Essaie d'abord le .ico (nécessaire pour un rendu correct dans la barre
-    des tâches Windows), puis retombe sur le .png (multiplateforme) si le
-    .ico échoue ou n'est pas supporté (cas normal sous Linux/macOS, où le
-    format .ico natif Windows n'est pas pris en charge par Tk)."""
+    """Applique l'icône de l'application à la fenêtre donnée (Tk ou
+    Toplevel). Essaie d'abord le .ico (nécessaire pour un rendu correct
+    dans la barre des tâches Windows), puis retombe sur le .png
+    (multiplateforme) si le .ico échoue ou n'est pas supporté (cas normal
+    sous Linux/macOS)."""
     ico_path = resource_path(os.path.join("assets", "icon.ico"))
     png_path = resource_path(os.path.join("assets", "icon.png"))
 
