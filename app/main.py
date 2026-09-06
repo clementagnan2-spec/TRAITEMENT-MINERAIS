@@ -18,11 +18,10 @@ Lancer avec :  python main.py
 
 import tkinter as tk
 from tkinter import ttk
-import os
-import sys
 
 import db
 from data_postes import POSTES_REF
+from icon_utils import appliquer_icone
 from ui_login import EcranConnexion, DialogueChangerMotDePasse
 from ui_dashboard import OngletTableauDeBord
 from ui_releves import OngletReleves
@@ -40,15 +39,6 @@ BG = "#f4f6f5"
 ACCENT = "#2f6f4f"
 FONT_BASE = ("Segoe UI", 10)
 FONT_TITLE = ("Segoe UI", 13, "bold")
-
-
-def resource_path(chemin_relatif):
-    """Retourne le chemin absolu d'une ressource, que l'application tourne
-    depuis le code source ou depuis un .exe compilé par PyInstaller
-    (--onefile extrait les fichiers de données dans un dossier temporaire
-    référencé par sys._MEIPASS)."""
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, chemin_relatif)
 
 ROLES_LABELS = {
     "operateur": "Opérateur",
@@ -88,7 +78,7 @@ class Application(tk.Tk):
 
         self.current_user = None
 
-        self._appliquer_icone()
+        appliquer_icone(self)
 
         credit = tk.Label(
             self, text=CREDIT_TEXTE, font=("Segoe UI", 8), bg="#2f6f4f", fg="#ffffff",
@@ -100,24 +90,6 @@ class Application(tk.Tk):
         self.container.pack(fill="both", expand=True)
 
         self._afficher_connexion()
-
-    def _appliquer_icone(self):
-        """Définit l'icône de la fenêtre (lingot d'or). Utilise le .ico sur
-        Windows (barre de titre + barre des tâches) et retombe sur un PNG
-        via iconphoto pour rester compatible multiplateforme."""
-        try:
-            ico_path = resource_path(os.path.join("assets", "icon.ico"))
-            if os.path.exists(ico_path):
-                self.iconbitmap(default=ico_path)
-        except tk.TclError:
-            pass
-        try:
-            png_path = resource_path(os.path.join("assets", "icon.png"))
-            if os.path.exists(png_path):
-                self._icone_img = tk.PhotoImage(file=png_path)
-                self.iconphoto(True, self._icone_img)
-        except tk.TclError:
-            pass
 
     def _afficher_connexion(self):
         for w in self.container.winfo_children():
