@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS productions (
     type_flux TEXT NOT NULL CHECK (type_flux IN ('Alimentation','Concentré','Stérile / rejet','Produit fini')),
     masse_tonnes REAL NOT NULL,
     teneur_pct REAL,
-    commentaire TEXT
+    commentaire TEXT,
+    poste_origine_id TEXT REFERENCES postes_reference(id)
 );
 
 CREATE TABLE IF NOT EXISTS incidents (
@@ -158,7 +159,7 @@ CREATE TABLE IF NOT EXISTS charges_exploitation (
     user_id INTEGER NOT NULL REFERENCES users(id),
     horodatage TEXT NOT NULL,
     categorie TEXT NOT NULL CHECK (categorie IN
-        ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Autre')),
+        ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Amortissement','Autre')),
     montant REAL NOT NULL,
     compte_num TEXT,
     compte_libelle TEXT,
@@ -402,15 +403,61 @@ def lister_releves(poste_id=None, limite=200):
 # ---------------------------------------------------------------------
 # Productions réelles (pour bilan matière)
 # ---------------------------------------------------------------------
-def ajouter_production(poste_id, user_id, type_flux, masse_tonnes, teneur_pct, commentaire):
+def ajouter_production(poste_id, user_id, type_flux, masse_tonnes, teneur_pct, commentaire,
+                        poste_origine_id=None):
     conn = get_connection()
     conn.execute(
         "INSERT INTO productions (poste_id, user_id, horodatage, type_flux, masse_tonnes, "
-        "teneur_pct, commentaire) VALUES (?,?,?,?,?,?,?)",
-        (poste_id, user_id, now_iso(), type_flux, masse_tonnes, teneur_pct, commentaire),
+        "teneur_pct, commentaire, poste_origine_id) VALUES (?,?,?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), type_flux, masse_tonnes, teneur_pct, commentaire,
+         poste_origine_id),
     )
     conn.commit()
     conn.close()
+
+
+def dernier_cout_unitaire(poste_id):
+    """Dernier coût unitaire à la tonne (CMUP) connu pour ce poste, issu de
+    la dernière écriture comptable générée qui en comportait un."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT cout_unitaire_t FROM ecritures_comptables WHERE poste_id = ? "
+        "AND cout_unitaire_t IS NOT NULL ORDER BY horodatage DESC LIMIT 1",
+        (poste_id,),
+    ).fetchone()
+    conn.close()
+    return row["cout_unitaire_t"] if row else None
+
+
+def transferer_stock(poste_origine_id, poste_destination_id, user_id, masse_tonnes, teneur_pct,
+                      commentaire):
+    """Enregistre le transfert d'une masse de matière du stock d'un poste
+    vers l'« Alimentation » d'un poste suivant (ex. le broyé de A2 qui
+    alimente la flottation B4). Ce transfert :
+      - crée l'entrée « Alimentation » chez le poste de destination, en
+        traçant explicitement le poste d'origine (pour que le stock du
+        poste d'origine soit ensuite compté comme sorti — voir
+        niveaux_stocks) ;
+      - si un CMUP (coût unitaire à la tonne) est déjà connu pour le poste
+        d'origine, valorise automatiquement ce transfert comme une charge
+        « Matière » chez le poste de destination, à ce CMUP — c'est la
+        matière première du poste suivant, à son coût de revient.
+    Retourne le CMUP utilisé (ou None si aucun n'était disponible, auquel
+    cas aucune charge n'a été créée automatiquement)."""
+    ajouter_production(poste_destination_id, user_id, "Alimentation", masse_tonnes, teneur_pct,
+                        commentaire, poste_origine_id=poste_origine_id)
+
+    cmup = dernier_cout_unitaire(poste_origine_id)
+    if cmup is not None:
+        montant = masse_tonnes * cmup
+        centre_origine = obtenir_centre_cout(poste_origine_id)
+        libelle_origine = centre_origine["code_centre"] if centre_origine else poste_origine_id
+        ajouter_charge(
+            poste_destination_id, user_id, "Matière", montant,
+            f"Transfert depuis {libelle_origine} — {masse_tonnes:.2f} t à "
+            f"{cmup:.2f} FCFA/t (CMUP)"
+        )
+    return cmup
 
 
 def lister_productions(poste_id=None, date_debut=None, date_fin=None, limite=500):
@@ -786,10 +833,17 @@ def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, u
 
 def niveaux_stocks(date_debut=None, date_fin=None):
     """Pour chaque centre de coût, calcule la masse entrée (flux
-    'Alimentation'), la masse sortie (les 3 autres types de flux) et le
-    solde physique (entrées - sorties) sur la période, ainsi que la
-    valorisation du solde à partir du dernier coût unitaire connu pour ce
-    poste (issu de la dernière écriture comptable générée).
+    'Alimentation'), la masse sortie et le solde physique (entrées -
+    sorties) sur la période, ainsi que la valorisation du solde à partir
+    du dernier coût unitaire connu pour ce poste (issu de la dernière
+    écriture comptable générée).
+
+    La masse sortie d'un poste compte deux choses : ses propres flux de
+    sortie (Concentré, Stérile/rejet, Produit fini) ET la masse que des
+    postes en aval ont transférée depuis son stock (voir
+    transferer_stock) — c'est ce qui fait qu'un stock en amont diminue
+    bien quand le poste suivant produit à partir de lui.
+
     Un solde >= 0 est qualifié de débiteur (normal pour un compte de
     stock/actif) ; un solde négatif (sorties > entrées constatées) est
     qualifié de créditeur — signe d'un écart à vérifier."""
@@ -798,17 +852,22 @@ def niveaux_stocks(date_debut=None, date_fin=None):
         "SELECT COALESCE(SUM(masse_tonnes), 0) AS m FROM productions "
         "WHERE poste_id = ? AND type_flux = 'Alimentation'"
     )
-    q_sorties = (
+    q_sorties_propres = (
         "SELECT COALESCE(SUM(masse_tonnes), 0) AS m FROM productions "
         "WHERE poste_id = ? AND type_flux != 'Alimentation'"
     )
-    params_extra = []
+    q_sorties_transferees = (
+        "SELECT COALESCE(SUM(masse_tonnes), 0) AS m FROM productions "
+        "WHERE poste_origine_id = ?"
+    )
     if date_debut:
         q_entrees += " AND horodatage >= ?"
-        q_sorties += " AND horodatage >= ?"
+        q_sorties_propres += " AND horodatage >= ?"
+        q_sorties_transferees += " AND horodatage >= ?"
     if date_fin:
         q_entrees += " AND horodatage <= ?"
-        q_sorties += " AND horodatage <= ?"
+        q_sorties_propres += " AND horodatage <= ?"
+        q_sorties_transferees += " AND horodatage <= ?"
 
     resultats = []
     for c in lister_centres_cout():
@@ -818,21 +877,20 @@ def niveaux_stocks(date_debut=None, date_fin=None):
         if date_fin:
             params.append(date_fin)
         entrees = conn.execute(q_entrees, params).fetchone()["m"]
-        sorties = conn.execute(q_sorties, params).fetchone()["m"]
+        sorties_propres = conn.execute(q_sorties_propres, params).fetchone()["m"]
+        sorties_transferees = conn.execute(q_sorties_transferees, params).fetchone()["m"]
+        sorties = sorties_propres + sorties_transferees
         solde = entrees - sorties
 
-        derniere = conn.execute(
-            "SELECT cout_unitaire_t FROM ecritures_comptables WHERE poste_id = ? "
-            "AND cout_unitaire_t IS NOT NULL ORDER BY horodatage DESC LIMIT 1",
-            (c["poste_id"],),
-        ).fetchone()
-        cout_unitaire = derniere["cout_unitaire_t"] if derniere else None
+        cout_unitaire = dernier_cout_unitaire(c["poste_id"])
         valeur_solde = solde * cout_unitaire if cout_unitaire is not None else None
 
         resultats.append({
             "poste_id": c["poste_id"], "poste_titre": c["poste_titre"],
-            "code_centre": c["code_centre"], "entrees_t": entrees, "sorties_t": sorties,
-            "solde_t": solde, "sens": "Débiteur" if solde >= 0 else "Créditeur",
+            "code_centre": c["code_centre"], "entrees_t": entrees,
+            "sorties_t": sorties, "sorties_propres_t": sorties_propres,
+            "sorties_transferees_t": sorties_transferees, "solde_t": solde,
+            "sens": "Débiteur" if solde >= 0 else "Créditeur",
             "cout_unitaire_t": cout_unitaire, "valeur_solde": valeur_solde,
         })
     conn.close()

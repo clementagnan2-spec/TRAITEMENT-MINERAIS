@@ -34,6 +34,10 @@ COMPTES_CHARGES = {
         "numero": "6243",
         "libelle": "Entretiens, réparations et maintenance",
     },
+    "Amortissement": {
+        "numero": "6813",
+        "libelle": "Dotations aux amortissements des immobilisations corporelles — matériel de production",
+    },
     "Autre": {
         "numero": "6288",
         "libelle": "Autres charges externes diverses",

@@ -29,7 +29,7 @@ FONT_BASE = ("Segoe UI", 10)
 FONT_MONO = ("Consolas", 10)
 ACCENT = "#2f6f4f"
 
-CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Autre"]
+CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Amortissement", "Autre"]
 TYPES_FLUX = ["Alimentation", "Concentré", "Stérile / rejet", "Produit fini"]
 
 
@@ -487,11 +487,15 @@ class OngletCoutsExploitation(ttk.Frame):
 
         ttk.Label(
             frame,
-            text="Pour chaque circuit (poste), masse entrée (flux « Alimentation »), masse "
-                 "sortie (concentré, stérile/rejet, produit fini) et solde physique. Le solde "
-                 "est débiteur (normal) s'il est positif ou nul, créditeur (à vérifier) s'il "
-                 "est négatif. La valeur du solde utilise le dernier coût unitaire à la tonne "
-                 "calculé pour ce poste, quand il est disponible.",
+            text="Pour chaque circuit (poste), masse entrée (flux « Alimentation ») et masse "
+                 "sortie, qui comprend à la fois la production propre du poste (concentré, "
+                 "stérile/rejet, produit fini) ET la matière transférée vers un poste aval "
+                 "(saisie comme « Alimentation » avec un poste d'origine, dans Production & "
+                 "bilan matière) — c'est ce qui fait diminuer le stock d'un poste quand le "
+                 "poste suivant produit à partir de lui. Le solde est débiteur (normal) s'il "
+                 "est positif ou nul, créditeur (à vérifier) s'il est négatif. La valeur du "
+                 "solde utilise le dernier coût unitaire à la tonne (CMUP) calculé pour ce "
+                 "poste, quand il est disponible.",
             font=FONT_BASE, wraplength=860,
         ).pack(anchor="w", pady=(0, 8))
 
@@ -505,12 +509,14 @@ class OngletCoutsExploitation(ttk.Frame):
         ttk.Button(filtre_frame, text="Actualiser",
                    command=self._rafraichir_stocks).pack(side="left")
 
-        cols = ("poste_titre", "code_centre", "entrees_t", "sorties_t", "solde_t", "sens",
-                "cout_unitaire_t", "valeur_solde")
+        cols = ("poste_titre", "code_centre", "entrees_t", "sorties_propres_t",
+                "sorties_transferees_t", "sorties_t", "solde_t", "sens", "cout_unitaire_t",
+                "valeur_solde")
         self.tree_stocks = ttk.Treeview(frame, columns=cols, show="headings", height=14)
-        entetes = ("Poste", "Centre", "Entrées (t)", "Sorties (t)", "Solde (t)", "Sens",
-                   "Coût unit. (FCFA/t)", "Valeur du solde (FCFA)")
-        largeurs = (170, 80, 100, 100, 90, 90, 130, 160)
+        entetes = ("Poste", "Centre", "Entrées (t)", "Sorties propres (t)",
+                   "dont transférées vers l'aval (t)", "Sorties totales (t)", "Solde (t)",
+                   "Sens", "CMUP (FCFA/t)", "Valeur du solde (FCFA)")
+        largeurs = (160, 70, 90, 110, 190, 100, 90, 90, 110, 150)
         for c, txt, w in zip(cols, entetes, largeurs):
             self.tree_stocks.heading(c, text=txt)
             self.tree_stocks.column(c, width=w, anchor="w")
@@ -529,6 +535,7 @@ class OngletCoutsExploitation(ttk.Frame):
                 "", "end", tags=(tag,),
                 values=(
                     s["poste_titre"], s["code_centre"], f"{s['entrees_t']:.2f}",
+                    f"{s['sorties_propres_t']:.2f}", f"{s['sorties_transferees_t']:.2f}",
                     f"{s['sorties_t']:.2f}", f"{s['solde_t']:.2f}", s["sens"],
                     f"{s['cout_unitaire_t']:.2f}" if s["cout_unitaire_t"] is not None else "—",
                     f"{s['valeur_solde']:,.0f}".replace(",", " ")

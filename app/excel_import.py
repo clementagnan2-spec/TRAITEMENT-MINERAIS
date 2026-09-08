@@ -22,7 +22,7 @@ from data_postes import POSTES_REF
 
 POSTE_IDS = [p["id"] for p in POSTES_REF]
 TYPES_FLUX = ["Alimentation", "Concentré", "Stérile / rejet", "Produit fini"]
-CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Autre"]
+CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Amortissement", "Autre"]
 
 ENTETES_PRODUCTIONS = ["Poste (code)", "Type de flux", "Masse (tonnes)", "Teneur (%)",
                         "Commentaire"]
@@ -38,6 +38,7 @@ EXEMPLES_CHARGES = [
     ["A2", "Énergie", 1500000, "Exemple — électricité broyeur"],
     ["A2", "Main-d'œuvre", 500000, "Exemple — équipe de poste"],
     ["A2", "Maintenance", 300000, "Exemple — pièces d'usure"],
+    ["A2", "Amortissement", 450000, "Exemple — dotation aux amortissements du broyeur"],
 ]
 
 

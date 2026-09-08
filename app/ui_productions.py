@@ -51,10 +51,33 @@ class OngletProductions(ttk.Frame):
             row=1, column=0, sticky="w", padx=(0, 8), pady=4
         )
         self.flux_var = tk.StringVar(value=TYPES_FLUX[0])
-        ttk.Combobox(
+        flux_combo = ttk.Combobox(
             form, textvariable=self.flux_var, state="readonly", width=20, font=FONT_BASE,
             values=TYPES_FLUX
-        ).grid(row=1, column=1, pady=4, sticky="w")
+        )
+        flux_combo.grid(row=1, column=1, pady=4, sticky="w")
+
+        ttk.Label(form, text="Poste d'origine (transfert de stock) :", font=FONT_BASE).grid(
+            row=1, column=2, sticky="w", padx=(20, 8)
+        )
+        self.SANS_ORIGINE = "(Aucun — apport externe)"
+        self.poste_origine_var = tk.StringVar(value=self.SANS_ORIGINE)
+        self.poste_origine_combo = ttk.Combobox(
+            form, textvariable=self.poste_origine_var, state="readonly", width=32,
+            font=FONT_BASE,
+            values=[self.SANS_ORIGINE] + [f"{p['id']} — {p['titre']}" for p in POSTES_REF]
+        )
+        self.poste_origine_combo.grid(row=1, column=3, pady=4, sticky="w")
+
+        def _maj_etat_origine(*_):
+            if self.flux_var.get() == "Alimentation":
+                self.poste_origine_combo.configure(state="readonly")
+            else:
+                self.poste_origine_var.set(self.SANS_ORIGINE)
+                self.poste_origine_combo.configure(state="disabled")
+
+        self.flux_var.trace_add("write", _maj_etat_origine)
+        _maj_etat_origine()
 
         ttk.Label(form, text="Masse (tonnes) :", font=FONT_BASE).grid(
             row=2, column=0, sticky="w", padx=(0, 8), pady=4
@@ -145,16 +168,49 @@ class OngletProductions(ttk.Frame):
                 return
 
         poste_id = self.poste_var.get().split(" — ")[0]
-        db.ajouter_production(poste_id, self.current_user["id"], self.flux_var.get(), masse,
-                               teneur, self.commentaire_var.get().strip())
-        db.log_audit(self.current_user["id"], "Ajout production",
-                      f"{poste_id} / {self.flux_var.get()} / {masse} t")
+
+        origine_txt = self.poste_origine_var.get()
+        if self.flux_var.get() == "Alimentation" and origine_txt not in ("", self.SANS_ORIGINE):
+            poste_origine_id = origine_txt.split(" — ")[0]
+            if poste_origine_id == poste_id:
+                messagebox.showerror("Erreur", "Le poste d'origine doit être différent du "
+                                                "poste de destination.")
+                return
+            cmup = db.transferer_stock(poste_origine_id, poste_id, self.current_user["id"],
+                                        masse, teneur, self.commentaire_var.get().strip())
+            db.log_audit(
+                self.current_user["id"], "Transfert de stock",
+                f"{poste_origine_id} -> {poste_id} / {masse} t"
+                + (f" @ {cmup:.2f} FCFA/t" if cmup is not None else " (CMUP inconnu)")
+            )
+            if cmup is not None:
+                messagebox.showinfo(
+                    "Enregistré",
+                    f"Transfert enregistré : {masse:.2f} t de {poste_origine_id} vers "
+                    f"{poste_id}.\nCharge « Matière » créée automatiquement chez {poste_id} : "
+                    f"{masse * cmup:,.0f} FCFA (à {cmup:.2f} FCFA/t, CMUP de "
+                    f"{poste_origine_id}).".replace(",", " ")
+                )
+            else:
+                messagebox.showinfo(
+                    "Enregistré",
+                    f"Transfert enregistré : {masse:.2f} t de {poste_origine_id} vers "
+                    f"{poste_id}.\nAucun CMUP n'est encore connu pour {poste_origine_id} "
+                    "(générez d'abord une écriture comptable pour ce poste) : aucune charge "
+                    "« Matière » n'a été créée automatiquement — vous pouvez la saisir "
+                    "manuellement dans Coûts d'exploitation."
+                )
+        else:
+            db.ajouter_production(poste_id, self.current_user["id"], self.flux_var.get(),
+                                   masse, teneur, self.commentaire_var.get().strip())
+            db.log_audit(self.current_user["id"], "Ajout production",
+                          f"{poste_id} / {self.flux_var.get()} / {masse} t")
+            messagebox.showinfo("Enregistré", "Production enregistrée avec succès.")
 
         self.masse_var.set("")
         self.teneur_var.set("")
         self.commentaire_var.set("")
         self._rafraichir_historique()
-        messagebox.showinfo("Enregistré", "Production enregistrée avec succès.")
 
     def _ecrire_bilan(self, texte):
         self.resultat.configure(state="normal")
