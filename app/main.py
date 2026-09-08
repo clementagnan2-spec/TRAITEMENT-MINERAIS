@@ -27,6 +27,7 @@ from ui_dashboard import OngletTableauDeBord
 from ui_releves import OngletReleves
 from ui_productions import OngletProductions
 from ui_couts import OngletCoutsExploitation
+from ui_logistique import OngletLogistique
 from ui_incidents import OngletIncidents
 from ui_securite import OngletSecuriteOps
 from ui_equipes import OngletEquipes
@@ -142,6 +143,8 @@ class Application(tk.Tk):
                          text="  Production & bilan matière  ")
             notebook.add(OngletCoutsExploitation(notebook, self.current_user),
                          text="  Coûts d'exploitation  ")
+            notebook.add(OngletLogistique(notebook, self.current_user),
+                         text="  Logistique  ")
 
         notebook.add(OngletIncidents(notebook, self.current_user), text="  Incidents  ")
         notebook.add(OngletSecuriteOps(notebook, self.current_user), text="  Sécurité (LOTO/HSE)  ")

@@ -38,6 +38,10 @@ COMPTES_CHARGES = {
         "numero": "6813",
         "libelle": "Dotations aux amortissements des immobilisations corporelles — matériel de production",
     },
+    "Transport": {
+        "numero": "618",
+        "libelle": "Autres frais de transport — logistique minière interne",
+    },
     "Autre": {
         "numero": "6288",
         "libelle": "Autres charges externes diverses",

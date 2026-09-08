@@ -162,7 +162,8 @@ CREATE TABLE IF NOT EXISTS charges_exploitation (
     user_id INTEGER NOT NULL REFERENCES users(id),
     horodatage TEXT NOT NULL,
     categorie TEXT NOT NULL CHECK (categorie IN
-        ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Amortissement','Autre')),
+        ('Matière','Énergie','Réactifs','Main-d''œuvre','Maintenance','Amortissement',
+         'Transport','Autre')),
     montant REAL NOT NULL,
     compte_num TEXT,
     compte_libelle TEXT,
@@ -194,6 +195,134 @@ CREATE TABLE IF NOT EXISTS ecritures_comptables_lignes (
     compte_libelle TEXT NOT NULL,
     libelle_ligne TEXT,
     montant REAL NOT NULL
+);
+
+-- -----------------------------------------------------------------
+-- Module Logistique minière : flotte, dispatch, pont-bascule,
+-- carburant, maintenance, magasin/pièces. Le coût logistique d'un
+-- véhicule, rapporté aux tonnes transportées, peut être transféré comme
+-- charge « Transport » vers le centre de coût d'un poste (voir
+-- transferer_cout_logistique), rejoignant ainsi le même système de
+-- coût de production / écritures comptables que le reste de l'usine.
+-- -----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS vehicules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    immatriculation TEXT,
+    type TEXT NOT NULL CHECK (type IN
+        ('Camion','Chargeuse','Excavatrice','Bulldozer','Citerne','Véhicule léger','Autre')),
+    marque_modele TEXT,
+    capacite_tonnes REAL,
+    compteur_km REAL DEFAULT 0,
+    compteur_heures REAL DEFAULT 0,
+    conducteur_affecte TEXT,
+    statut TEXT NOT NULL DEFAULT 'Disponible' CHECK (statut IN
+        ('Disponible','En mission','Maintenance','Immobilisé')),
+    assurance_echeance TEXT,
+    prochaine_maintenance_heures REAL,
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS missions_transport (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicule_id INTEGER NOT NULL REFERENCES vehicules(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    origine TEXT,
+    destination TEXT,
+    poste_destination_id TEXT REFERENCES postes_reference(id),
+    distance_km REAL,
+    nombre_voyages REAL,
+    tonnes_par_voyage REAL,
+    tonnage_total REAL,
+    temps_attente_min REAL,
+    temps_chargement_min REAL,
+    temps_dechargement_min REAL,
+    carburant_consomme_l REAL,
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tickets_pesee (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero_ticket TEXT NOT NULL,
+    vehicule_id INTEGER NOT NULL REFERENCES vehicules(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    matiere TEXT,
+    poids_brut_t REAL NOT NULL,
+    tare_t REAL NOT NULL,
+    poids_net_t REAL NOT NULL,
+    origine TEXT,
+    destination TEXT,
+    poste_destination_id TEXT REFERENCES postes_reference(id),
+    grade_teneur REAL,
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pleins_carburant (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicule_id INTEGER NOT NULL REFERENCES vehicules(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    compteur REAL,
+    litres REAL NOT NULL,
+    prix_unitaire REAL NOT NULL,
+    montant REAL NOT NULL,
+    conducteur TEXT,
+    station TEXT,
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS maintenances_flotte (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicule_id INTEGER NOT NULL REFERENCES vehicules(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    type_intervention TEXT NOT NULL CHECK (type_intervention IN
+        ('Préventive','Corrective','Vidange','Pneus','Batterie','Autre')),
+    compteur_heures REAL,
+    compteur_km REAL,
+    description TEXT,
+    cout REAL NOT NULL DEFAULT 0,
+    prochaine_echeance_heures REAL
+);
+
+CREATE TABLE IF NOT EXISTS pieces_stock (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    designation TEXT NOT NULL,
+    categorie TEXT NOT NULL CHECK (categorie IN
+        ('Pneus','Filtres','Huiles','Pièces mécaniques','Pièces électriques','Consommables',
+         'EPI','Autre')),
+    unite TEXT NOT NULL DEFAULT 'unité',
+    stock_actuel REAL NOT NULL DEFAULT 0,
+    seuil_alerte REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS mouvements_pieces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    piece_id INTEGER NOT NULL REFERENCES pieces_stock(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    type_mouvement TEXT NOT NULL CHECK (type_mouvement IN ('Entrée','Sortie')),
+    quantite REAL NOT NULL,
+    vehicule_id INTEGER REFERENCES vehicules(id),
+    cout_unitaire REAL,
+    montant REAL,
+    commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS charges_logistique (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicule_id INTEGER NOT NULL REFERENCES vehicules(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    horodatage TEXT NOT NULL,
+    categorie TEXT NOT NULL CHECK (categorie IN
+        ('Carburant','Pneus','Maintenance','Personnel','Pièces','Autre')),
+    montant REAL NOT NULL,
+    origine TEXT NOT NULL DEFAULT 'Manuelle' CHECK (origine IN
+        ('Manuelle','Carburant (auto)','Maintenance (auto)','Pièces (auto)')),
+    commentaire TEXT
 );
 """
 
@@ -947,3 +1076,458 @@ def lister_ecritures_comptables(poste_id=None, limite=200):
     rows = conn.execute(q, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------
+# Module Logistique minière — flotte, dispatch, pont-bascule, carburant,
+# maintenance, magasin/pièces, et liaison avec les coûts de production.
+# ---------------------------------------------------------------------
+def ajouter_vehicule(code, immatriculation, type_vehicule, marque_modele, capacite_tonnes,
+                      conducteur_affecte, commentaire):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO vehicules (code, immatriculation, type, marque_modele, capacite_tonnes, "
+        "conducteur_affecte, statut, commentaire) VALUES (?,?,?,?,?,?,'Disponible',?)",
+        (code, immatriculation, type_vehicule, marque_modele, capacite_tonnes,
+         conducteur_affecte, commentaire),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lister_vehicules():
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM vehicules ORDER BY code").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def obtenir_vehicule(vehicule_id):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM vehicules WHERE id = ?", (vehicule_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def modifier_statut_vehicule(vehicule_id, statut):
+    conn = get_connection()
+    conn.execute("UPDATE vehicules SET statut = ? WHERE id = ?", (statut, vehicule_id))
+    conn.commit()
+    conn.close()
+
+
+def mettre_a_jour_compteurs_vehicule(vehicule_id, compteur_km=None, compteur_heures=None):
+    conn = get_connection()
+    if compteur_km is not None:
+        conn.execute("UPDATE vehicules SET compteur_km = ? WHERE id = ?",
+                     (compteur_km, vehicule_id))
+    if compteur_heures is not None:
+        conn.execute("UPDATE vehicules SET compteur_heures = ? WHERE id = ?",
+                     (compteur_heures, vehicule_id))
+    conn.commit()
+    conn.close()
+
+
+def ajouter_mission(vehicule_id, user_id, origine, destination, poste_destination_id,
+                     distance_km, nombre_voyages, tonnes_par_voyage, temps_attente_min,
+                     temps_chargement_min, temps_dechargement_min, carburant_consomme_l,
+                     commentaire):
+    tonnage_total = (nombre_voyages or 0) * (tonnes_par_voyage or 0)
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO missions_transport (vehicule_id, user_id, horodatage, origine, "
+        "destination, poste_destination_id, distance_km, nombre_voyages, tonnes_par_voyage, "
+        "tonnage_total, temps_attente_min, temps_chargement_min, temps_dechargement_min, "
+        "carburant_consomme_l, commentaire) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (vehicule_id, user_id, now_iso(), origine, destination, poste_destination_id,
+         distance_km, nombre_voyages, tonnes_par_voyage, tonnage_total, temps_attente_min,
+         temps_chargement_min, temps_dechargement_min, carburant_consomme_l, commentaire),
+    )
+    conn.commit()
+    conn.close()
+    return tonnage_total
+
+
+def lister_missions(vehicule_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT m.*, v.code AS vehicule_code, u.nom_complet FROM missions_transport m "
+        "JOIN vehicules v ON v.id = m.vehicule_id JOIN users u ON u.id = m.user_id WHERE 1=1"
+    )
+    params = []
+    if vehicule_id:
+        q += " AND m.vehicule_id = ?"
+        params.append(vehicule_id)
+    q += " ORDER BY m.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def ajouter_ticket_pesee(numero_ticket, vehicule_id, user_id, matiere, poids_brut_t, tare_t,
+                          origine, destination, poste_destination_id, grade_teneur,
+                          commentaire):
+    poids_net_t = poids_brut_t - tare_t
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO tickets_pesee (numero_ticket, vehicule_id, user_id, horodatage, "
+        "matiere, poids_brut_t, tare_t, poids_net_t, origine, destination, "
+        "poste_destination_id, grade_teneur, commentaire) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (numero_ticket, vehicule_id, user_id, now_iso(), matiere, poids_brut_t, tare_t,
+         poids_net_t, origine, destination, poste_destination_id, grade_teneur, commentaire),
+    )
+    conn.commit()
+    conn.close()
+
+    # Le poids net alimente automatiquement le bilan matière du poste de
+    # destination, comme une alimentation externe (ex. ROM livré au A0).
+    if poste_destination_id:
+        ajouter_production(poste_destination_id, user_id, "Alimentation", poids_net_t,
+                            grade_teneur, f"Ticket de pesée {numero_ticket} — véhicule "
+                                          f"{obtenir_vehicule(vehicule_id)['code']}")
+    return poids_net_t
+
+
+def lister_tickets_pesee(vehicule_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT t.*, v.code AS vehicule_code, u.nom_complet FROM tickets_pesee t "
+        "JOIN vehicules v ON v.id = t.vehicule_id JOIN users u ON u.id = t.user_id WHERE 1=1"
+    )
+    params = []
+    if vehicule_id:
+        q += " AND t.vehicule_id = ?"
+        params.append(vehicule_id)
+    q += " ORDER BY t.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def ajouter_plein_carburant(vehicule_id, user_id, compteur, litres, prix_unitaire, conducteur,
+                             station, commentaire):
+    montant = litres * prix_unitaire
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO pleins_carburant (vehicule_id, user_id, horodatage, compteur, litres, "
+        "prix_unitaire, montant, conducteur, station, commentaire) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (vehicule_id, user_id, now_iso(), compteur, litres, prix_unitaire, montant,
+         conducteur, station, commentaire),
+    )
+    conn.execute(
+        "INSERT INTO charges_logistique (vehicule_id, user_id, horodatage, categorie, "
+        "montant, origine, commentaire) VALUES (?,?,?,?,?,?,?)",
+        (vehicule_id, user_id, now_iso(), "Carburant", montant, "Carburant (auto)",
+         f"{litres:.1f} L à {prix_unitaire:.0f} FCFA/L — {station or ''}".strip()),
+    )
+    conn.commit()
+    conn.close()
+    return montant
+
+
+def lister_pleins_carburant(vehicule_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT p.*, v.code AS vehicule_code, u.nom_complet FROM pleins_carburant p "
+        "JOIN vehicules v ON v.id = p.vehicule_id JOIN users u ON u.id = p.user_id WHERE 1=1"
+    )
+    params = []
+    if vehicule_id:
+        q += " AND p.vehicule_id = ?"
+        params.append(vehicule_id)
+    q += " ORDER BY p.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def consommation_vehicule(vehicule_id, date_debut=None, date_fin=None):
+    """Litres/jour, litres/tonne et coût carburant/tonne pour un véhicule
+    sur une période, à comparer à une consommation standard (L/100km)
+    saisie par l'utilisateur pour détecter une anomalie."""
+    pleins = lister_pleins_carburant(vehicule_id=vehicule_id, limite=100000)
+    if date_debut:
+        pleins = [p for p in pleins if p["horodatage"] >= date_debut]
+    if date_fin:
+        pleins = [p for p in pleins if p["horodatage"] <= date_fin]
+    litres_total = sum(p["litres"] for p in pleins)
+    montant_total = sum(p["montant"] for p in pleins)
+
+    missions = lister_missions(vehicule_id=vehicule_id, limite=100000)
+    if date_debut:
+        missions = [m for m in missions if m["horodatage"] >= date_debut]
+    if date_fin:
+        missions = [m for m in missions if m["horodatage"] <= date_fin]
+    # Distance totale parcourue = distance du trajet x nombre de voyages
+    # (approximation : suppose que "distance_km" saisie est déjà le
+    # trajet aller-retour par voyage, ou à ajuster selon votre convention
+    # de saisie).
+    distance_total = sum((m["distance_km"] or 0) * (m["nombre_voyages"] or 0)
+                          for m in missions)
+    tonnage_total = sum(m["tonnage_total"] or 0 for m in missions)
+
+    return {
+        "litres_total": litres_total, "montant_total": montant_total,
+        "distance_total_km": distance_total, "tonnage_total_t": tonnage_total,
+        "litres_par_100km": (litres_total / distance_total * 100) if distance_total else None,
+        "litres_par_tonne": (litres_total / tonnage_total) if tonnage_total else None,
+        "cout_carburant_par_tonne": (montant_total / tonnage_total) if tonnage_total else None,
+    }
+
+
+def ajouter_maintenance(vehicule_id, user_id, type_intervention, compteur_heures,
+                         compteur_km, description, cout, prochaine_echeance_heures):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO maintenances_flotte (vehicule_id, user_id, horodatage, "
+        "type_intervention, compteur_heures, compteur_km, description, cout, "
+        "prochaine_echeance_heures) VALUES (?,?,?,?,?,?,?,?,?)",
+        (vehicule_id, user_id, now_iso(), type_intervention, compteur_heures, compteur_km,
+         description, cout, prochaine_echeance_heures),
+    )
+    if cout:
+        conn.execute(
+            "INSERT INTO charges_logistique (vehicule_id, user_id, horodatage, categorie, "
+            "montant, origine, commentaire) VALUES (?,?,?,?,?,?,?)",
+            (vehicule_id, user_id, now_iso(), "Maintenance", cout, "Maintenance (auto)",
+             f"{type_intervention} — {description or ''}".strip()),
+        )
+    if prochaine_echeance_heures is not None:
+        conn.execute("UPDATE vehicules SET prochaine_maintenance_heures = ? WHERE id = ?",
+                     (prochaine_echeance_heures, vehicule_id))
+    if compteur_heures is not None or compteur_km is not None:
+        if compteur_heures is not None:
+            conn.execute("UPDATE vehicules SET compteur_heures = ? WHERE id = ?",
+                         (compteur_heures, vehicule_id))
+        if compteur_km is not None:
+            conn.execute("UPDATE vehicules SET compteur_km = ? WHERE id = ?",
+                         (compteur_km, vehicule_id))
+    conn.commit()
+    conn.close()
+
+
+def lister_maintenances(vehicule_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT m.*, v.code AS vehicule_code, u.nom_complet FROM maintenances_flotte m "
+        "JOIN vehicules v ON v.id = m.vehicule_id JOIN users u ON u.id = m.user_id WHERE 1=1"
+    )
+    params = []
+    if vehicule_id:
+        q += " AND m.vehicule_id = ?"
+        params.append(vehicule_id)
+    q += " ORDER BY m.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def ajouter_piece(code, designation, categorie, unite, stock_initial, seuil_alerte):
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO pieces_stock (code, designation, categorie, unite, stock_actuel, "
+        "seuil_alerte) VALUES (?,?,?,?,?,?)",
+        (code, designation, categorie, unite, stock_initial, seuil_alerte),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lister_pieces():
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM pieces_stock ORDER BY categorie, designation").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def mouvement_piece(piece_id, user_id, type_mouvement, quantite, vehicule_id, cout_unitaire,
+                     commentaire):
+    montant = (quantite * cout_unitaire) if cout_unitaire is not None else None
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO mouvements_pieces (piece_id, user_id, horodatage, type_mouvement, "
+        "quantite, vehicule_id, cout_unitaire, montant, commentaire) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (piece_id, user_id, now_iso(), type_mouvement, quantite, vehicule_id, cout_unitaire,
+         montant, commentaire),
+    )
+    delta = quantite if type_mouvement == "Entrée" else -quantite
+    conn.execute("UPDATE pieces_stock SET stock_actuel = stock_actuel + ? WHERE id = ?",
+                 (delta, piece_id))
+
+    if type_mouvement == "Sortie" and vehicule_id and montant:
+        conn.execute(
+            "INSERT INTO charges_logistique (vehicule_id, user_id, horodatage, categorie, "
+            "montant, origine, commentaire) VALUES (?,?,?,?,?,?,?)",
+            (vehicule_id, user_id, now_iso(), "Pièces", montant, "Pièces (auto)",
+             (commentaire or "").strip()),
+        )
+    conn.commit()
+    conn.close()
+
+
+def lister_mouvements_pieces(piece_id=None, limite=200):
+    conn = get_connection()
+    q = (
+        "SELECT mp.*, ps.designation, ps.code AS piece_code, u.nom_complet, "
+        "v.code AS vehicule_code FROM mouvements_pieces mp "
+        "JOIN pieces_stock ps ON ps.id = mp.piece_id JOIN users u ON u.id = mp.user_id "
+        "LEFT JOIN vehicules v ON v.id = mp.vehicule_id WHERE 1=1"
+    )
+    params = []
+    if piece_id:
+        q += " AND mp.piece_id = ?"
+        params.append(piece_id)
+    q += " ORDER BY mp.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def ajouter_charge_logistique(vehicule_id, user_id, categorie, montant, commentaire):
+    """Charge logistique saisie manuellement (ex. personnel, autres coûts) —
+    les charges Carburant/Maintenance/Pièces sont elles générées
+    automatiquement par les fonctions correspondantes ci-dessus."""
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO charges_logistique (vehicule_id, user_id, horodatage, categorie, "
+        "montant, origine, commentaire) VALUES (?,?,?,?,?,'Manuelle',?)",
+        (vehicule_id, user_id, now_iso(), categorie, montant, commentaire),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lister_charges_logistique(vehicule_id=None, limite=500):
+    conn = get_connection()
+    q = (
+        "SELECT cl.*, v.code AS vehicule_code, u.nom_complet FROM charges_logistique cl "
+        "JOIN vehicules v ON v.id = cl.vehicule_id JOIN users u ON u.id = cl.user_id WHERE 1=1"
+    )
+    params = []
+    if vehicule_id:
+        q += " AND cl.vehicule_id = ?"
+        params.append(vehicule_id)
+    q += " ORDER BY cl.horodatage DESC LIMIT ?"
+    params.append(limite)
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def cout_logistique_vehicule(vehicule_id, date_debut=None, date_fin=None):
+    """Coût logistique total d'un véhicule sur une période (carburant +
+    maintenance + pièces + personnel/autres charges manuelles), rapporté
+    aux tonnes transportées (missions + tickets de pesée), pour obtenir un
+    coût logistique par tonne — la même logique que le CMUP des postes de
+    production, appliquée à un véhicule."""
+    charges = lister_charges_logistique(vehicule_id=vehicule_id, limite=100000)
+    if date_debut:
+        charges = [c for c in charges if c["horodatage"] >= date_debut]
+    if date_fin:
+        charges = [c for c in charges if c["horodatage"] <= date_fin]
+    par_categorie = {}
+    total = 0.0
+    for c in charges:
+        par_categorie.setdefault(c["categorie"], 0.0)
+        par_categorie[c["categorie"]] += c["montant"]
+        total += c["montant"]
+
+    missions = lister_missions(vehicule_id=vehicule_id, limite=100000)
+    if date_debut:
+        missions = [m for m in missions if m["horodatage"] >= date_debut]
+    if date_fin:
+        missions = [m for m in missions if m["horodatage"] <= date_fin]
+    tonnage_missions = sum(m["tonnage_total"] or 0 for m in missions)
+
+    tickets = lister_tickets_pesee(vehicule_id=vehicule_id, limite=100000)
+    if date_debut:
+        tickets = [t for t in tickets if t["horodatage"] >= date_debut]
+    if date_fin:
+        tickets = [t for t in tickets if t["horodatage"] <= date_fin]
+    tonnage_tickets = sum(t["poids_net_t"] for t in tickets)
+
+    tonnage_total = tonnage_missions + tonnage_tickets
+    cout_par_tonne = (total / tonnage_total) if tonnage_total else None
+
+    return {
+        "total": total, "par_categorie": par_categorie, "tonnage_total_t": tonnage_total,
+        "cout_par_tonne": cout_par_tonne,
+    }
+
+
+def transferer_cout_logistique(vehicule_id, poste_destination_id, user_id, date_debut,
+                                date_fin=None):
+    """Transfère le coût logistique par tonne d'un véhicule vers le
+    centre de coût d'un poste de production, comme charge « Transport » —
+    exactement le même principe que transferer_stock pour la matière
+    entre deux postes de production."""
+    cout = cout_logistique_vehicule(vehicule_id, date_debut, date_fin)
+    if cout["cout_par_tonne"] is None:
+        raise ValueError("Aucune tonne transportée sur cette période : impossible de "
+                          "calculer un coût logistique par tonne.")
+    vehicule = obtenir_vehicule(vehicule_id)
+    montant = cout["total"]
+    ajouter_charge(
+        poste_destination_id, user_id, "Transport", montant,
+        f"Coût logistique {vehicule['code']} — {cout['tonnage_total_t']:.2f} t à "
+        f"{cout['cout_par_tonne']:.2f} FCFA/t"
+    )
+    return cout
+
+
+def kpis_logistique_jour():
+    aujourdhui = datetime.date.today().isoformat()
+    conn = get_connection()
+
+    flotte = conn.execute("SELECT statut, COUNT(*) AS n FROM vehicules GROUP BY statut") \
+        .fetchall()
+    flotte_par_statut = {r["statut"]: r["n"] for r in flotte}
+    flotte_totale = sum(flotte_par_statut.values())
+
+    tonnes_missions = conn.execute(
+        "SELECT COALESCE(SUM(tonnage_total), 0) AS t FROM missions_transport "
+        "WHERE horodatage >= ?", (aujourdhui,)
+    ).fetchone()["t"]
+    tonnes_tickets = conn.execute(
+        "SELECT COALESCE(SUM(poids_net_t), 0) AS t FROM tickets_pesee WHERE horodatage >= ?",
+        (aujourdhui,),
+    ).fetchone()["t"]
+    nombre_voyages = conn.execute(
+        "SELECT COALESCE(SUM(nombre_voyages), 0) AS n FROM missions_transport "
+        "WHERE horodatage >= ?", (aujourdhui,)
+    ).fetchone()["n"]
+    litres_jour = conn.execute(
+        "SELECT COALESCE(SUM(litres), 0) AS l FROM pleins_carburant WHERE horodatage >= ?",
+        (aujourdhui,),
+    ).fetchone()["l"]
+    cout_carburant_jour = conn.execute(
+        "SELECT COALESCE(SUM(montant), 0) AS m FROM pleins_carburant WHERE horodatage >= ?",
+        (aujourdhui,),
+    ).fetchone()["m"]
+    pieces_sous_seuil = conn.execute(
+        "SELECT COUNT(*) AS n FROM pieces_stock WHERE stock_actuel <= seuil_alerte"
+    ).fetchone()["n"]
+
+    conn.close()
+    tonnes_jour = tonnes_missions + tonnes_tickets
+    return {
+        "flotte_totale": flotte_totale,
+        "flotte_disponible": flotte_par_statut.get("Disponible", 0),
+        "flotte_en_mission": flotte_par_statut.get("En mission", 0),
+        "flotte_maintenance": flotte_par_statut.get("Maintenance", 0),
+        "flotte_immobilisee": flotte_par_statut.get("Immobilisé", 0),
+        "tonnes_transportees_jour": tonnes_jour,
+        "nombre_voyages_jour": nombre_voyages,
+        "litres_carburant_jour": litres_jour,
+        "cout_carburant_jour": cout_carburant_jour,
+        "cout_transport_par_tonne_jour": (cout_carburant_jour / tonnes_jour)
+        if tonnes_jour else None,
+        "pieces_sous_seuil": pieces_sous_seuil,
+    }
