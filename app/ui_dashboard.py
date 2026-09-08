@@ -62,6 +62,8 @@ class OngletTableauDeBord(ttk.Frame):
             ("Consignations (LOTO) actives", kpis["loto_actifs"],
              ALERTE if kpis["loto_actifs"] > 0 else ACCENT),
             ("Relevés saisis aujourd'hui", kpis["releves_jour"], ACCENT),
+            ("Relevés non conformes aujourd'hui", kpis["releves_non_conformes_jour"],
+             ALERTE if kpis["releves_non_conformes_jour"] > 0 else ACCENT),
             ("Affectations planifiées aujourd'hui", kpis["equipes_planifiees_jour"], ACCENT),
         ]
         for i, (titre, valeur, couleur) in enumerate(cartes):

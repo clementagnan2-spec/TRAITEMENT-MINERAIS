@@ -79,7 +79,10 @@ CREATE TABLE IF NOT EXISTS releves (
     parametre TEXT NOT NULL,
     valeur REAL NOT NULL,
     unite TEXT,
-    commentaire TEXT
+    commentaire TEXT,
+    conforme INTEGER,
+    borne_min REAL,
+    borne_max REAL
 );
 
 CREATE TABLE IF NOT EXISTS productions (
@@ -216,6 +219,14 @@ def init_db(postes_reference):
     ainsi que la table de référence des postes/circuits."""
     conn = get_connection()
     conn.executescript(SCHEMA)
+
+    # Migration légère pour les bases existantes créées avant l'ajout du
+    # barème de conformité : on ajoute les colonnes si elles manquent.
+    colonnes_releves = {row["name"] for row in conn.execute("PRAGMA table_info(releves)")}
+    for colonne, type_sql in (("conforme", "INTEGER"), ("borne_min", "REAL"),
+                               ("borne_max", "REAL")):
+        if colonne not in colonnes_releves:
+            conn.execute(f"ALTER TABLE releves ADD COLUMN {colonne} {type_sql}")
 
     for p in postes_reference:
         conn.execute(
@@ -372,14 +383,21 @@ def maj_statut_affectation(affectation_id, statut):
 # Relevés d'exploitation
 # ---------------------------------------------------------------------
 def ajouter_releve(poste_id, user_id, parametre, valeur, unite, commentaire):
+    from data_postes import evaluer_conformite
+
+    conforme, borne_min, borne_max = evaluer_conformite(poste_id, parametre, valeur)
+
     conn = get_connection()
     conn.execute(
         "INSERT INTO releves (poste_id, user_id, horodatage, parametre, valeur, unite, "
-        "commentaire) VALUES (?,?,?,?,?,?,?)",
-        (poste_id, user_id, now_iso(), parametre, valeur, unite, commentaire),
+        "commentaire, conforme, borne_min, borne_max) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (poste_id, user_id, now_iso(), parametre, valeur, unite, commentaire,
+         (None if conforme is None else int(conforme)), borne_min, borne_max),
     )
     conn.commit()
     conn.close()
+
+    return {"conforme": conforme, "borne_min": borne_min, "borne_max": borne_max}
 
 
 def lister_releves(poste_id=None, limite=200):
@@ -660,6 +678,11 @@ def kpis_du_jour():
         "SELECT COUNT(*) AS n FROM releves WHERE horodatage >= ?", (aujourdhui,)
     ).fetchone()["n"]
 
+    releves_non_conformes_jour = conn.execute(
+        "SELECT COUNT(*) AS n FROM releves WHERE horodatage >= ? AND conforme = 0",
+        (aujourdhui,),
+    ).fetchone()["n"]
+
     equipes_jour = conn.execute(
         "SELECT COUNT(*) AS n FROM affectations WHERE date_jour = ?", (aujourdhui,)
     ).fetchone()["n"]
@@ -670,6 +693,7 @@ def kpis_du_jour():
         "incidents_ouverts": incidents_ouverts,
         "loto_actifs": loto_actifs,
         "releves_jour": releves_jour,
+        "releves_non_conformes_jour": releves_non_conformes_jour,
         "equipes_planifiees_jour": equipes_jour,
     }
 

@@ -5,13 +5,30 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
-from data_postes import POSTES_REF
+from data_postes import POSTES_REF, obtenir_bareme
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_BASE = ("Segoe UI", 10)
+FONT_SMALL = ("Segoe UI", 9)
 ACCENT = "#2f6f4f"
+ALERTE = "#a6371f"
 
 POSTES_PAR_ID = {p["id"]: p for p in POSTES_REF}
+
+
+def _formater_bareme(bareme):
+    """Formate un couple (borne_min, borne_max) en texte lisible, ex.
+    'norme : 50 – 150' ou 'norme : ≤ 8' ou 'norme : ≥ 99.0'."""
+    if bareme is None:
+        return ""
+    borne_min, borne_max = bareme
+    if borne_min is not None and borne_max is not None:
+        return f"norme : {borne_min:g} – {borne_max:g}"
+    if borne_min is not None:
+        return f"norme : ≥ {borne_min:g}"
+    if borne_max is not None:
+        return f"norme : ≤ {borne_max:g}"
+    return ""
 
 
 class OngletReleves(ttk.Frame):
@@ -64,6 +81,8 @@ class OngletReleves(ttk.Frame):
         )
         self.unite_label = ttk.Label(val_frame, text="", font=FONT_BASE)
         self.unite_label.pack(side="left", padx=(8, 0))
+        self.bareme_label = ttk.Label(val_frame, text="", font=FONT_SMALL, foreground="#666666")
+        self.bareme_label.pack(side="left", padx=(12, 0))
 
         ttk.Label(form, text="Commentaire (optionnel) :", font=FONT_BASE).grid(
             row=3, column=0, sticky="nw", padx=(0, 8), pady=4
@@ -90,12 +109,15 @@ class OngletReleves(ttk.Frame):
         filtre_combo.pack(side="left", padx=8)
         filtre_combo.bind("<<ComboboxSelected>>", lambda e: self._rafraichir_historique())
 
-        cols = ("horodatage", "poste_titre", "parametre", "valeur", "unite", "nom_complet")
+        cols = ("horodatage", "poste_titre", "parametre", "valeur", "unite", "conformite",
+                "nom_complet")
         self.tree = ttk.Treeview(self, columns=cols, show="headings", height=12)
-        largeurs = (140, 190, 200, 80, 60, 150)
+        entetes = {"conformite": "Conformité"}
+        largeurs = (140, 190, 200, 80, 60, 100, 150)
         for c, w in zip(cols, largeurs):
-            self.tree.heading(c, text=c.replace("_", " ").capitalize())
+            self.tree.heading(c, text=entetes.get(c, c.replace("_", " ").capitalize()))
             self.tree.column(c, width=w, anchor="w")
+        self.tree.tag_configure("non_conforme", background="#fbe4e0", foreground=ALERTE)
         self.tree.pack(fill="both", expand=True, pady=(8, 0))
 
         self._rafraichir_historique()
@@ -108,6 +130,7 @@ class OngletReleves(ttk.Frame):
             self.param_combo.configure(values=noms)
             self.param_var.set("")
             self.unite_label.configure(text="")
+            self.bareme_label.configure(text="")
 
     def _maj_unite(self):
         poste_id = self.poste_var.get().split(" — ")[0]
@@ -117,7 +140,10 @@ class OngletReleves(ttk.Frame):
         for nom, unite in poste["parametres"]:
             if nom == self.param_var.get():
                 self.unite_label.configure(text=unite)
+                bareme = obtenir_bareme(poste_id, nom)
+                self.bareme_label.configure(text=_formater_bareme(bareme))
                 return
+        self.bareme_label.configure(text="")
 
     def _enregistrer(self):
         if not self.poste_var.get() or not self.param_var.get():
@@ -130,18 +156,36 @@ class OngletReleves(ttk.Frame):
             return
 
         poste_id = self.poste_var.get().split(" — ")[0]
+        parametre = self.param_var.get()
         commentaire = self.commentaire_txt.get("1.0", "end").strip()
         unite = self.unite_label.cget("text")
 
-        db.ajouter_releve(poste_id, self.current_user["id"], self.param_var.get(), valeur,
-                           unite, commentaire)
+        resultat = db.ajouter_releve(poste_id, self.current_user["id"], parametre, valeur,
+                                      unite, commentaire)
         db.log_audit(self.current_user["id"], "Ajout relevé",
-                      f"{poste_id} / {self.param_var.get()} = {valeur}")
+                      f"{poste_id} / {parametre} = {valeur}")
 
         self.valeur_var.set("")
         self.commentaire_txt.delete("1.0", "end")
         self._rafraichir_historique()
-        messagebox.showinfo("Enregistré", "Relevé enregistré avec succès.")
+
+        if resultat["conforme"] is False:
+            db.log_audit(
+                self.current_user["id"], "ALERTE non-conformité",
+                f"{poste_id} / {parametre} = {valeur} {unite} "
+                f"({_formater_bareme((resultat['borne_min'], resultat['borne_max']))})"
+            )
+            messagebox.showwarning(
+                "⚠ Valeur hors norme",
+                f"Le relevé a été enregistré, mais la valeur saisie est hors du "
+                f"barème normal pour ce paramètre.\n\n"
+                f"Poste : {poste_id} — {POSTES_PAR_ID[poste_id]['titre']}\n"
+                f"Paramètre : {parametre}\n"
+                f"Valeur saisie : {valeur:g} {unite}\n"
+                f"{_formater_bareme((resultat['borne_min'], resultat['borne_max']))}"
+            )
+        else:
+            messagebox.showinfo("Enregistré", "Relevé enregistré avec succès.")
 
     def _rafraichir_historique(self):
         for row in self.tree.get_children():
@@ -149,8 +193,18 @@ class OngletReleves(ttk.Frame):
         choix = self.filtre_var.get()
         poste_id = None if choix == "Tous" else choix.split(" — ")[0]
         for r in db.lister_releves(poste_id=poste_id, limite=200):
+            conforme = r["conforme"]
+            if conforme is None:
+                texte_conformite = "—"
+                tags = ()
+            elif conforme:
+                texte_conformite = "✓ Conforme"
+                tags = ()
+            else:
+                texte_conformite = "⚠ Non conforme"
+                tags = ("non_conforme",)
             self.tree.insert(
-                "", "end",
+                "", "end", tags=tags,
                 values=(r["horodatage"], r["poste_titre"], r["parametre"], r["valeur"],
-                        r["unite"] or "", r["nom_complet"])
+                        r["unite"] or "", texte_conformite, r["nom_complet"])
             )
