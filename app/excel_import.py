@@ -25,13 +25,15 @@ TYPES_FLUX = ["Alimentation", "Concentré", "Stérile / rejet", "Produit fini"]
 CATEGORIES_CHARGE = ["Matière", "Énergie", "Réactifs", "Main-d'œuvre", "Maintenance", "Amortissement", "Autre"]
 
 ENTETES_PRODUCTIONS = ["Poste (code)", "Type de flux", "Masse (tonnes)", "Teneur (%)",
-                        "Commentaire"]
+                        "Commentaire", "Poste d'origine (transfert, optionnel)"]
 ENTETES_CHARGES = ["Poste (code)", "Catégorie", "Montant (FCFA)", "Commentaire"]
 
 EXEMPLES_PRODUCTIONS = [
-    ["A2", "Alimentation", 1000, 1.20, "Exemple — alimentation broyage"],
-    ["A2", "Concentré", 780, 3.10, "Exemple — concentré broyage"],
-    ["B4", "Concentré", 120, 28.0, "Exemple — concentré flottation"],
+    ["A2", "Alimentation", 1000, 1.20, "Exemple — alimentation broyage (apport externe)", ""],
+    ["A2", "Concentré", 780, 3.10, "Exemple — concentré broyage", ""],
+    ["B4", "Alimentation", 780, 3.10, "Exemple — transfert vers flottation, au CMUP de A2",
+     "A2"],
+    ["B4", "Concentré", 120, 28.0, "Exemple — concentré flottation", ""],
 ]
 EXEMPLES_CHARGES = [
     ["A2", "Matière", 10000000, "Exemple — minerai alimenté"],
@@ -63,7 +65,8 @@ def generer_modele(chemin, nb_lignes_vides=30):
     total_lignes_1 = 1 + len(EXEMPLES_PRODUCTIONS) + nb_lignes_vides
     _ajouter_validation(ws1, "A", POSTE_IDS, total_lignes_1)
     _ajouter_validation(ws1, "B", TYPES_FLUX, total_lignes_1)
-    for col, largeur in zip("ABCDE", (14, 16, 14, 10, 40)):
+    _ajouter_validation(ws1, "F", POSTE_IDS, total_lignes_1)
+    for col, largeur in zip("ABCDEF", (14, 16, 14, 10, 45, 16)):
         ws1.column_dimensions[col].width = largeur
 
     ws2 = wb.create_sheet("Charges")
@@ -90,7 +93,9 @@ def importer_fichier(chemin, user_id):
     if "Productions" in wb.sheetnames:
         ws = wb["Productions"]
         for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            poste_id, type_flux, masse, teneur, commentaire = (list(row) + [None] * 5)[:5]
+            poste_id, type_flux, masse, teneur, commentaire, poste_origine = (
+                list(row) + [None] * 6
+            )[:6]
             if poste_id is None and type_flux is None and masse is None:
                 continue
             poste_id = str(poste_id).strip() if poste_id is not None else ""
@@ -114,8 +119,21 @@ def importer_fichier(chemin, user_id):
                 except (TypeError, ValueError):
                     resultat["erreurs"].append(f"Productions, ligne {i} : teneur invalide "
                                                 f"(ignorée).")
-            db.ajouter_production(poste_id, user_id, type_flux, masse, teneur_val,
-                                   (commentaire or "").strip())
+
+            poste_origine = str(poste_origine).strip() if poste_origine not in (None, "") \
+                else None
+            if poste_origine and poste_origine not in POSTE_IDS:
+                resultat["erreurs"].append(f"Productions, ligne {i} : poste d'origine "
+                                            f"« {poste_origine} » inconnu (ignoré, ligne "
+                                            f"importée comme apport externe).")
+                poste_origine = None
+
+            if poste_origine and type_flux == "Alimentation":
+                db.transferer_stock(poste_origine, poste_id, user_id, masse, teneur_val,
+                                     (commentaire or "").strip())
+            else:
+                db.ajouter_production(poste_id, user_id, type_flux, masse, teneur_val,
+                                       (commentaire or "").strip())
             resultat["productions_importees"] += 1
 
     if "Charges" in wb.sheetnames:
