@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 
 import db
 import analyse_indicateurs as analyse
-from data_postes import POSTES_REF, obtenir_bareme
+from data_postes import POSTES_REF, obtenir_bareme, decrire_risque
 from ui_widgets import rendre_defilant
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
@@ -131,14 +131,21 @@ class OngletReleves(ttk.Frame):
 
         cols = ("horodatage", "poste_titre", "parametre", "valeur", "unite", "conformite",
                 "nom_complet")
-        self.tree = ttk.Treeview(colonne_gauche, columns=cols, show="headings", height=12)
-        entetes = {"conformite": "Conformité"}
-        largeurs = (140, 190, 200, 80, 60, 100, 150)
+        arbre_conteneur = ttk.Frame(colonne_gauche)
+        arbre_conteneur.pack(fill="both", expand=True, pady=(8, 0))
+        self.tree = ttk.Treeview(arbre_conteneur, columns=cols, show="headings", height=12)
+        entetes = {"conformite": "Conformité / risque encouru"}
+        largeurs = (110, 150, 170, 60, 50, 320, 110)
         for c, w in zip(cols, largeurs):
             self.tree.heading(c, text=entetes.get(c, c.replace("_", " ").capitalize()))
             self.tree.column(c, width=w, anchor="w")
         self.tree.tag_configure("non_conforme", background="#fbe4e0", foreground=ALERTE)
-        self.tree.pack(fill="both", expand=True, pady=(8, 0))
+        scrollbar_h = ttk.Scrollbar(
+            arbre_conteneur, orient="horizontal", command=self.tree.xview
+        )
+        self.tree.configure(xscrollcommand=scrollbar_h.set)
+        self.tree.pack(side="top", fill="both", expand=True)
+        scrollbar_h.pack(side="bottom", fill="x")
 
         self._rafraichir_historique()
 
@@ -356,6 +363,8 @@ class OngletReleves(ttk.Frame):
         self._rafraichir_historique()
 
         if resultat["conforme"] is False:
+            risque = decrire_risque(poste_id, parametre, valeur, resultat["borne_min"],
+                                     resultat["borne_max"])
             db.log_audit(
                 self.current_user["id"], "ALERTE non-conformité",
                 f"{poste_id} / {parametre} = {valeur} {unite} "
@@ -368,7 +377,8 @@ class OngletReleves(ttk.Frame):
                 f"Poste : {poste_id} — {POSTES_PAR_ID[poste_id]['titre']}\n"
                 f"Paramètre : {parametre}\n"
                 f"Valeur saisie : {valeur:g} {unite}\n"
-                f"{_formater_bareme((resultat['borne_min'], resultat['borne_max']))}"
+                f"{_formater_bareme((resultat['borne_min'], resultat['borne_max']))}\n\n"
+                f"Risque encouru : {risque}"
             )
         else:
             messagebox.showinfo("Enregistré", "Relevé enregistré avec succès.")
@@ -387,7 +397,10 @@ class OngletReleves(ttk.Frame):
                 texte_conformite = "✓ Conforme"
                 tags = ()
             else:
-                texte_conformite = "⚠ Non conforme"
+                risque = decrire_risque(
+                    r["poste_id"], r["parametre"], r["valeur"], r["borne_min"], r["borne_max"]
+                )
+                texte_conformite = f"⚠ {risque}"
                 tags = ("non_conforme",)
             self.tree.insert(
                 "", "end", tags=tags,
