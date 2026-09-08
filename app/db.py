@@ -784,6 +784,61 @@ def generer_ecriture_comptable(poste_id, date_debut, date_fin, flux_reference, u
     }
 
 
+def niveaux_stocks(date_debut=None, date_fin=None):
+    """Pour chaque centre de coût, calcule la masse entrée (flux
+    'Alimentation'), la masse sortie (les 3 autres types de flux) et le
+    solde physique (entrées - sorties) sur la période, ainsi que la
+    valorisation du solde à partir du dernier coût unitaire connu pour ce
+    poste (issu de la dernière écriture comptable générée).
+    Un solde >= 0 est qualifié de débiteur (normal pour un compte de
+    stock/actif) ; un solde négatif (sorties > entrées constatées) est
+    qualifié de créditeur — signe d'un écart à vérifier."""
+    conn = get_connection()
+    q_entrees = (
+        "SELECT COALESCE(SUM(masse_tonnes), 0) AS m FROM productions "
+        "WHERE poste_id = ? AND type_flux = 'Alimentation'"
+    )
+    q_sorties = (
+        "SELECT COALESCE(SUM(masse_tonnes), 0) AS m FROM productions "
+        "WHERE poste_id = ? AND type_flux != 'Alimentation'"
+    )
+    params_extra = []
+    if date_debut:
+        q_entrees += " AND horodatage >= ?"
+        q_sorties += " AND horodatage >= ?"
+    if date_fin:
+        q_entrees += " AND horodatage <= ?"
+        q_sorties += " AND horodatage <= ?"
+
+    resultats = []
+    for c in lister_centres_cout():
+        params = [c["poste_id"]]
+        if date_debut:
+            params.append(date_debut)
+        if date_fin:
+            params.append(date_fin)
+        entrees = conn.execute(q_entrees, params).fetchone()["m"]
+        sorties = conn.execute(q_sorties, params).fetchone()["m"]
+        solde = entrees - sorties
+
+        derniere = conn.execute(
+            "SELECT cout_unitaire_t FROM ecritures_comptables WHERE poste_id = ? "
+            "AND cout_unitaire_t IS NOT NULL ORDER BY horodatage DESC LIMIT 1",
+            (c["poste_id"],),
+        ).fetchone()
+        cout_unitaire = derniere["cout_unitaire_t"] if derniere else None
+        valeur_solde = solde * cout_unitaire if cout_unitaire is not None else None
+
+        resultats.append({
+            "poste_id": c["poste_id"], "poste_titre": c["poste_titre"],
+            "code_centre": c["code_centre"], "entrees_t": entrees, "sorties_t": sorties,
+            "solde_t": solde, "sens": "Débiteur" if solde >= 0 else "Créditeur",
+            "cout_unitaire_t": cout_unitaire, "valeur_solde": valeur_solde,
+        })
+    conn.close()
+    return resultats
+
+
 def lister_lignes_ecriture(ecriture_id):
     conn = get_connection()
     rows = conn.execute(

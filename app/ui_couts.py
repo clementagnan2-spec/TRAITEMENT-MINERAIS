@@ -85,7 +85,9 @@ class OngletCoutsExploitation(ttk.Frame):
                  "est rattachée automatiquement à un compte du plan comptable SYSCOHADA — puis "
                  "calculez le coût de revient sur une période et générez l'écriture comptable.",
             font=FONT_BASE, wraplength=860,
-        ).pack(anchor="w", pady=(2, 14))
+        ).pack(anchor="w", pady=(2, 8))
+        ttk.Button(self, text="Voir le plan comptable lié à la production",
+                   command=self._voir_plan_comptable).pack(anchor="w", pady=(0, 10))
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
@@ -93,6 +95,61 @@ class OngletCoutsExploitation(ttk.Frame):
         self._onglet_referentiel(notebook)
         self._onglet_saisie(notebook)
         self._onglet_calcul(notebook)
+        self._onglet_stocks(notebook)
+
+    def _voir_plan_comptable(self):
+        from data_plan_comptable import COMPTES_CHARGES, COMPTES_STOCKS, \
+            COMPTE_CONTREPARTIE_STOCK
+
+        fenetre = tk.Toplevel(self)
+        fenetre.title("Plan comptable lié à la production (SYSCOHADA)")
+        fenetre.geometry("760x520")
+
+        ttk.Label(
+            fenetre, text="Plan comptable lié à la production", font=FONT_H2, foreground=ACCENT
+        ).pack(anchor="w", padx=12, pady=(12, 4))
+        ttk.Label(
+            fenetre,
+            text="Comptes réellement utilisés par le module Coûts d'exploitation, d'après "
+                 "les catégories de charges et les centres de coût du référentiel.",
+            font=FONT_BASE, wraplength=720,
+        ).pack(anchor="w", padx=12, pady=(0, 10))
+
+        cols = ("numero", "libelle", "type")
+        tree = ttk.Treeview(fenetre, columns=cols, show="headings", height=20)
+        tree.heading("numero", text="N° compte")
+        tree.heading("libelle", text="Libellé")
+        tree.heading("type", text="Type")
+        tree.column("numero", width=90, anchor="w")
+        tree.column("libelle", width=470, anchor="w")
+        tree.column("type", width=150, anchor="w")
+        tree.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        vues = set()
+        for categorie, compte in sorted(COMPTES_CHARGES.items(), key=lambda kv: kv[1]["numero"]):
+            cle = (compte["numero"], compte["libelle"])
+            if cle in vues:
+                continue
+            vues.add(cle)
+            tree.insert("", "end", values=(compte["numero"], compte["libelle"],
+                                            f"Charge (classe 6) — {categorie}"))
+
+        vues = set()
+        for libelle_stock, compte in sorted(COMPTES_STOCKS.items(),
+                                             key=lambda kv: kv[1]["numero"]):
+            cle = (compte["numero"], compte["libelle"])
+            if cle in vues:
+                continue
+            vues.add(cle)
+            tree.insert("", "end", values=(compte["numero"], compte["libelle"],
+                                            "Stock / en-cours (classe 3)"))
+
+        tree.insert("", "end", values=(
+            COMPTE_CONTREPARTIE_STOCK["numero"], COMPTE_CONTREPARTIE_STOCK["libelle"],
+            "Contrepartie (classe 7)"
+        ))
+
+        ttk.Button(fenetre, text="Fermer", command=fenetre.destroy).pack(pady=(0, 12))
 
     # -----------------------------------------------------------------
     # Sous-onglet : référentiel des centres de coût
@@ -419,6 +476,65 @@ class OngletCoutsExploitation(ttk.Frame):
             f"Coût unitaire : {detail_unitaire}\n\n"
             f"Le détail des lignes (comptes SYSCOHADA) est affiché ci-dessous."
         )
+
+    # -----------------------------------------------------------------
+    # Sous-onglet : niveau des stocks par circuit
+    # -----------------------------------------------------------------
+    def _onglet_stocks(self, notebook):
+        page = ttk.Frame(notebook)
+        notebook.add(page, text="Niveau des stocks par circuit")
+        frame = _rendre_defilant(page)
+
+        ttk.Label(
+            frame,
+            text="Pour chaque circuit (poste), masse entrée (flux « Alimentation »), masse "
+                 "sortie (concentré, stérile/rejet, produit fini) et solde physique. Le solde "
+                 "est débiteur (normal) s'il est positif ou nul, créditeur (à vérifier) s'il "
+                 "est négatif. La valeur du solde utilise le dernier coût unitaire à la tonne "
+                 "calculé pour ce poste, quand il est disponible.",
+            font=FONT_BASE, wraplength=860,
+        ).pack(anchor="w", pady=(0, 8))
+
+        filtre_frame = ttk.Frame(frame)
+        filtre_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(filtre_frame, text="Depuis (AAAA-MM-JJ, vide = tout l'historique) :",
+                  font=FONT_BASE).pack(side="left", padx=(0, 8))
+        self.stocks_date_debut_var = tk.StringVar()
+        ttk.Entry(filtre_frame, textvariable=self.stocks_date_debut_var, width=14,
+                  font=FONT_BASE).pack(side="left", padx=(0, 8))
+        ttk.Button(filtre_frame, text="Actualiser",
+                   command=self._rafraichir_stocks).pack(side="left")
+
+        cols = ("poste_titre", "code_centre", "entrees_t", "sorties_t", "solde_t", "sens",
+                "cout_unitaire_t", "valeur_solde")
+        self.tree_stocks = ttk.Treeview(frame, columns=cols, show="headings", height=14)
+        entetes = ("Poste", "Centre", "Entrées (t)", "Sorties (t)", "Solde (t)", "Sens",
+                   "Coût unit. (FCFA/t)", "Valeur du solde (FCFA)")
+        largeurs = (170, 80, 100, 100, 90, 90, 130, 160)
+        for c, txt, w in zip(cols, entetes, largeurs):
+            self.tree_stocks.heading(c, text=txt)
+            self.tree_stocks.column(c, width=w, anchor="w")
+        self.tree_stocks.tag_configure("crediteur", foreground="#b00020")
+        self.tree_stocks.pack(fill="both", expand=True)
+
+        self._rafraichir_stocks()
+
+    def _rafraichir_stocks(self):
+        for row in self.tree_stocks.get_children():
+            self.tree_stocks.delete(row)
+        date_debut = self.stocks_date_debut_var.get().strip() or None
+        for s in db.niveaux_stocks(date_debut=date_debut):
+            tag = "crediteur" if s["sens"] == "Créditeur" else ""
+            self.tree_stocks.insert(
+                "", "end", tags=(tag,),
+                values=(
+                    s["poste_titre"], s["code_centre"], f"{s['entrees_t']:.2f}",
+                    f"{s['sorties_t']:.2f}", f"{s['solde_t']:.2f}", s["sens"],
+                    f"{s['cout_unitaire_t']:.2f}" if s["cout_unitaire_t"] is not None else "—",
+                    f"{s['valeur_solde']:,.0f}".replace(",", " ")
+                    if s["valeur_solde"] is not None else "—",
+                )
+            )
 
     def _rafraichir_ecritures(self):
         for row in self.tree_ecritures.get_children():
