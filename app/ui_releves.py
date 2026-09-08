@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox
 import db
 import analyse_indicateurs as analyse
 from data_postes import POSTES_REF, obtenir_bareme
+from ui_widgets import rendre_defilant
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
 FONT_SECTION = ("Segoe UI", 12, "bold")
@@ -145,61 +146,59 @@ class OngletReleves(ttk.Frame):
     # Panneau d'analyse combinée (droite) : graphique + lecture croisée
     # -------------------------------------------------------------
     def _construire_panneau_analyse(self, parent):
-        ttk.Label(
-            parent, text="Analyse combinée des indicateurs", font=FONT_SECTION,
-            foreground=ACCENT, wraplength=340
-        ).pack(anchor="w")
-        ttk.Label(
-            parent,
-            text="Lecture automatique de plusieurs postes ensemble, pour repérer des "
-                 "situations que chaque relevé pris isolément ne montre pas.",
-            font=FONT_SMALL, foreground="#555555", wraplength=340, justify="left",
-        ).pack(anchor="w", pady=(2, 10))
+        # Panneau défilant : si le contenu (graphique + commentaires) est
+        # plus haut que la fenêtre, tout reste accessible par ascenseur au
+        # lieu d'être coupé en bas de l'écran.
+        interieur = rendre_defilant(parent)
+        interieur.configure(padding=(0, 0, 8, 0))
 
-        ttk.Label(parent, text="Conformité récente par poste", font=FONT_BASE).pack(
+        ttk.Label(
+            interieur, text="Analyse combinée des indicateurs", font=FONT_SECTION,
+            foreground=ACCENT, wraplength=330
+        ).pack(anchor="w", pady=(0, 6))
+
+        ttk.Label(interieur, text="Conformité récente par poste", font=FONT_BASE).pack(
             anchor="w"
         )
         self.canvas_graphique = tk.Canvas(
-            parent, width=336, height=230, bg="white", highlightthickness=1,
+            interieur, width=326, height=90, bg="white", highlightthickness=1,
             highlightbackground="#d8dcda"
         )
-        self.canvas_graphique.pack(anchor="w", pady=(4, 12))
+        self.canvas_graphique.pack(anchor="w", pady=(4, 6))
 
-        legende = ttk.Frame(parent)
-        legende.pack(anchor="w", pady=(0, 12))
+        legende = ttk.Frame(interieur)
+        legende.pack(anchor="w", pady=(0, 8))
         for couleur, texte in (
             (COULEUR_OK, "Conforme"), (COULEUR_ATTENTION, "À surveiller"),
-            (COULEUR_CRITIQUE, "Hors norme"), (COULEUR_SANS_DONNEE, "Sans donnée récente"),
+            (COULEUR_CRITIQUE, "Hors norme"), (COULEUR_SANS_DONNEE, "Sans donnée"),
         ):
             bloc = ttk.Frame(legende)
-            bloc.pack(side="left", padx=(0, 10))
-            puce = tk.Canvas(bloc, width=10, height=10, highlightthickness=0)
-            puce.create_rectangle(0, 0, 10, 10, fill=couleur, outline=couleur)
+            bloc.pack(side="left", padx=(0, 8))
+            puce = tk.Canvas(bloc, width=9, height=9, highlightthickness=0)
+            puce.create_rectangle(0, 0, 9, 9, fill=couleur, outline=couleur)
             puce.pack(side="left")
-            ttk.Label(bloc, text=texte, font=FONT_SMALL).pack(side="left", padx=(4, 0))
+            ttk.Label(bloc, text=texte, font=("Segoe UI", 8)).pack(side="left", padx=(3, 0))
 
-        entete_lecture = ttk.Frame(parent)
-        entete_lecture.pack(anchor="w", fill="x")
+        entete_lecture = ttk.Frame(interieur)
+        entete_lecture.pack(anchor="w", fill="x", pady=(2, 0))
         ttk.Label(entete_lecture, text="Lecture croisée des indicateurs", font=FONT_BASE).pack(
             side="left"
         )
         ttk.Button(
             entete_lecture, text="Actualiser", width=10, command=self._rafraichir_analyse
         ).pack(side="right")
+        ttk.Label(
+            interieur,
+            text="Repère des situations que chaque relevé pris isolément ne montre pas.",
+            font=("Segoe UI", 8), foreground="#777777", wraplength=330, justify="left",
+        ).pack(anchor="w", pady=(1, 6))
 
-        conteneur_texte = ttk.Frame(parent)
-        conteneur_texte.pack(fill="both", expand=True, pady=(4, 8))
         self.texte_alertes = tk.Text(
-            conteneur_texte, width=42, height=14, font=FONT_SMALL, wrap="word",
+            interieur, width=40, height=16, font=FONT_SMALL, wrap="word",
             relief="flat", background="#f7f8f7", padx=8, pady=8, state="disabled",
-            cursor="arrow",
+            cursor="arrow", borderwidth=0,
         )
-        scrollbar_alertes = ttk.Scrollbar(
-            conteneur_texte, orient="vertical", command=self.texte_alertes.yview
-        )
-        self.texte_alertes.configure(yscrollcommand=scrollbar_alertes.set)
-        self.texte_alertes.pack(side="left", fill="both", expand=True)
-        scrollbar_alertes.pack(side="right", fill="y")
+        self.texte_alertes.pack(anchor="w", fill="x", pady=(0, 8))
 
         self.texte_alertes.tag_configure(
             "critique", foreground=COULEUR_CRITIQUE, font=("Segoe UI", 9, "bold")
@@ -213,12 +212,12 @@ class OngletReleves(ttk.Frame):
         self.texte_alertes.tag_configure("corps", foreground="#2b2b2b")
 
         ttk.Label(
-            parent,
+            interieur,
             text="Lecture automatique indicative, fondée sur des règles simples : elle "
                  "ne remplace pas le jugement d'un opérateur ou d'un responsable process "
                  "qualifié.",
-            font=("Segoe UI", 8), foreground="#888888", wraplength=340, justify="left",
-        ).pack(anchor="w", side="bottom")
+            font=("Segoe UI", 8), foreground="#888888", wraplength=330, justify="left",
+        ).pack(anchor="w", pady=(0, 4))
 
     def _rafraichir_analyse(self):
         releves = db.lister_releves(limite=300)
@@ -231,14 +230,15 @@ class OngletReleves(ttk.Frame):
         scores = [s for s in analyse.scores_conformite_par_poste(releves) if s[3] > 0][:8]
 
         largeur = int(c["width"])
-        hauteur = int(c["height"])
         marge_gauche = 34
         marge_droite = 10
-        marge_haut = 8
-        marge_bas = 10
-        zone_h = hauteur - marge_haut - marge_bas
+        marge_haut = 6
+        marge_bas = 16
+        hauteur_ligne = 22
 
         if not scores:
+            hauteur = 60
+            c.configure(height=hauteur)
             c.create_text(
                 largeur / 2, hauteur / 2,
                 text="Aucun relevé avec barème défini pour l'instant.",
@@ -247,8 +247,11 @@ class OngletReleves(ttk.Frame):
             return
 
         n = len(scores)
+        hauteur = marge_haut + marge_bas + n * hauteur_ligne
+        c.configure(height=hauteur)
+        zone_h = hauteur - marge_haut - marge_bas
         pas = zone_h / n
-        hauteur_barre = max(10, pas * 0.6)
+        hauteur_barre = max(10, pas * 0.65)
 
         # Axe de référence (0% .. 100%)
         for frac, etiquette in ((0.0, "0%"), (0.5, "50%"), (1.0, "100%")):
