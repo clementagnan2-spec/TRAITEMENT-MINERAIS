@@ -193,12 +193,19 @@ class OngletReleves(ttk.Frame):
             font=("Segoe UI", 8), foreground="#777777", wraplength=330, justify="left",
         ).pack(anchor="w", pady=(1, 6))
 
+        conteneur_texte = ttk.Frame(interieur)
+        conteneur_texte.pack(anchor="w", fill="x", pady=(0, 8))
         self.texte_alertes = tk.Text(
-            interieur, width=40, height=16, font=FONT_SMALL, wrap="word",
+            conteneur_texte, width=38, height=16, font=FONT_SMALL, wrap="word",
             relief="flat", background="#f7f8f7", padx=8, pady=8, state="disabled",
             cursor="arrow", borderwidth=0,
         )
-        self.texte_alertes.pack(anchor="w", fill="x", pady=(0, 8))
+        scrollbar_alertes = ttk.Scrollbar(
+            conteneur_texte, orient="vertical", command=self.texte_alertes.yview
+        )
+        self.texte_alertes.configure(yscrollcommand=scrollbar_alertes.set)
+        self.texte_alertes.pack(side="left", fill="both", expand=True)
+        scrollbar_alertes.pack(side="left", fill="y")
 
         self.texte_alertes.tag_configure(
             "critique", foreground=COULEUR_CRITIQUE, font=("Segoe UI", 9, "bold")
