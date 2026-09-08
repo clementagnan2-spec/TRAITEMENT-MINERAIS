@@ -5,13 +5,21 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import db
+import analyse_indicateurs as analyse
 from data_postes import POSTES_REF, obtenir_bareme
 
 FONT_TITLE = ("Segoe UI", 16, "bold")
+FONT_SECTION = ("Segoe UI", 12, "bold")
 FONT_BASE = ("Segoe UI", 10)
 FONT_SMALL = ("Segoe UI", 9)
 ACCENT = "#2f6f4f"
 ALERTE = "#a6371f"
+
+COULEUR_CRITIQUE = "#c0392b"
+COULEUR_ATTENTION = "#c98a1f"
+COULEUR_INFO = "#4a6a83"
+COULEUR_OK = "#2f6f4f"
+COULEUR_SANS_DONNEE = "#b6bcbb"
 
 POSTES_PAR_ID = {p["id"]: p for p in POSTES_REF}
 
@@ -46,7 +54,18 @@ class OngletReleves(ttk.Frame):
             font=FONT_BASE,
         ).pack(anchor="w", pady=(2, 14))
 
-        form = ttk.Frame(self)
+        corps = ttk.Frame(self)
+        corps.pack(fill="both", expand=True)
+
+        colonne_gauche = ttk.Frame(corps)
+        colonne_gauche.pack(side="left", fill="both", expand=True)
+
+        colonne_droite = ttk.Frame(corps, width=360)
+        colonne_droite.pack(side="right", fill="y", padx=(16, 0))
+        colonne_droite.pack_propagate(False)
+        self._construire_panneau_analyse(colonne_droite)
+
+        form = ttk.Frame(colonne_gauche)
         form.pack(anchor="w", fill="x")
 
         ttk.Label(form, text="Poste / circuit :", font=FONT_BASE).grid(
@@ -90,12 +109,12 @@ class OngletReleves(ttk.Frame):
         self.commentaire_txt = tk.Text(form, height=3, width=45, font=FONT_BASE)
         self.commentaire_txt.grid(row=3, column=1, pady=4, sticky="w")
 
-        ttk.Button(self, text="Enregistrer le relevé", command=self._enregistrer).pack(
+        ttk.Button(colonne_gauche, text="Enregistrer le relevé", command=self._enregistrer).pack(
             anchor="w", pady=14
         )
 
-        ttk.Separator(self).pack(fill="x", pady=6)
-        filtre_frame = ttk.Frame(self)
+        ttk.Separator(colonne_gauche).pack(fill="x", pady=6)
+        filtre_frame = ttk.Frame(colonne_gauche)
         filtre_frame.pack(anchor="w", fill="x")
         ttk.Label(filtre_frame, text="Historique — filtrer par poste :", font=FONT_BASE).pack(
             side="left"
@@ -111,7 +130,7 @@ class OngletReleves(ttk.Frame):
 
         cols = ("horodatage", "poste_titre", "parametre", "valeur", "unite", "conformite",
                 "nom_complet")
-        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=12)
+        self.tree = ttk.Treeview(colonne_gauche, columns=cols, show="headings", height=12)
         entetes = {"conformite": "Conformité"}
         largeurs = (140, 190, 200, 80, 60, 100, 150)
         for c, w in zip(cols, largeurs):
@@ -121,6 +140,163 @@ class OngletReleves(ttk.Frame):
         self.tree.pack(fill="both", expand=True, pady=(8, 0))
 
         self._rafraichir_historique()
+
+    # -------------------------------------------------------------
+    # Panneau d'analyse combinée (droite) : graphique + lecture croisée
+    # -------------------------------------------------------------
+    def _construire_panneau_analyse(self, parent):
+        ttk.Label(
+            parent, text="Analyse combinée des indicateurs", font=FONT_SECTION,
+            foreground=ACCENT, wraplength=340
+        ).pack(anchor="w")
+        ttk.Label(
+            parent,
+            text="Lecture automatique de plusieurs postes ensemble, pour repérer des "
+                 "situations que chaque relevé pris isolément ne montre pas.",
+            font=FONT_SMALL, foreground="#555555", wraplength=340, justify="left",
+        ).pack(anchor="w", pady=(2, 10))
+
+        ttk.Label(parent, text="Conformité récente par poste", font=FONT_BASE).pack(
+            anchor="w"
+        )
+        self.canvas_graphique = tk.Canvas(
+            parent, width=336, height=230, bg="white", highlightthickness=1,
+            highlightbackground="#d8dcda"
+        )
+        self.canvas_graphique.pack(anchor="w", pady=(4, 12))
+
+        legende = ttk.Frame(parent)
+        legende.pack(anchor="w", pady=(0, 12))
+        for couleur, texte in (
+            (COULEUR_OK, "Conforme"), (COULEUR_ATTENTION, "À surveiller"),
+            (COULEUR_CRITIQUE, "Hors norme"), (COULEUR_SANS_DONNEE, "Sans donnée récente"),
+        ):
+            bloc = ttk.Frame(legende)
+            bloc.pack(side="left", padx=(0, 10))
+            puce = tk.Canvas(bloc, width=10, height=10, highlightthickness=0)
+            puce.create_rectangle(0, 0, 10, 10, fill=couleur, outline=couleur)
+            puce.pack(side="left")
+            ttk.Label(bloc, text=texte, font=FONT_SMALL).pack(side="left", padx=(4, 0))
+
+        entete_lecture = ttk.Frame(parent)
+        entete_lecture.pack(anchor="w", fill="x")
+        ttk.Label(entete_lecture, text="Lecture croisée des indicateurs", font=FONT_BASE).pack(
+            side="left"
+        )
+        ttk.Button(
+            entete_lecture, text="Actualiser", width=10, command=self._rafraichir_analyse
+        ).pack(side="right")
+
+        conteneur_texte = ttk.Frame(parent)
+        conteneur_texte.pack(fill="both", expand=True, pady=(4, 8))
+        self.texte_alertes = tk.Text(
+            conteneur_texte, width=42, height=14, font=FONT_SMALL, wrap="word",
+            relief="flat", background="#f7f8f7", padx=8, pady=8, state="disabled",
+            cursor="arrow",
+        )
+        scrollbar_alertes = ttk.Scrollbar(
+            conteneur_texte, orient="vertical", command=self.texte_alertes.yview
+        )
+        self.texte_alertes.configure(yscrollcommand=scrollbar_alertes.set)
+        self.texte_alertes.pack(side="left", fill="both", expand=True)
+        scrollbar_alertes.pack(side="right", fill="y")
+
+        self.texte_alertes.tag_configure(
+            "critique", foreground=COULEUR_CRITIQUE, font=("Segoe UI", 9, "bold")
+        )
+        self.texte_alertes.tag_configure(
+            "attention", foreground=COULEUR_ATTENTION, font=("Segoe UI", 9, "bold")
+        )
+        self.texte_alertes.tag_configure(
+            "info", foreground=COULEUR_INFO, font=("Segoe UI", 9, "bold")
+        )
+        self.texte_alertes.tag_configure("corps", foreground="#2b2b2b")
+
+        ttk.Label(
+            parent,
+            text="Lecture automatique indicative, fondée sur des règles simples : elle "
+                 "ne remplace pas le jugement d'un opérateur ou d'un responsable process "
+                 "qualifié.",
+            font=("Segoe UI", 8), foreground="#888888", wraplength=340, justify="left",
+        ).pack(anchor="w", side="bottom")
+
+    def _rafraichir_analyse(self):
+        releves = db.lister_releves(limite=300)
+        self._dessiner_graphique(releves)
+        self._afficher_alertes(releves)
+
+    def _dessiner_graphique(self, releves):
+        c = self.canvas_graphique
+        c.delete("all")
+        scores = [s for s in analyse.scores_conformite_par_poste(releves) if s[3] > 0][:8]
+
+        largeur = int(c["width"])
+        hauteur = int(c["height"])
+        marge_gauche = 34
+        marge_droite = 10
+        marge_haut = 8
+        marge_bas = 10
+        zone_h = hauteur - marge_haut - marge_bas
+
+        if not scores:
+            c.create_text(
+                largeur / 2, hauteur / 2,
+                text="Aucun relevé avec barème défini pour l'instant.",
+                font=FONT_SMALL, fill="#888888", width=largeur - 20,
+            )
+            return
+
+        n = len(scores)
+        pas = zone_h / n
+        hauteur_barre = max(10, pas * 0.6)
+
+        # Axe de référence (0% .. 100%)
+        for frac, etiquette in ((0.0, "0%"), (0.5, "50%"), (1.0, "100%")):
+            x = marge_gauche + frac * (largeur - marge_gauche - marge_droite)
+            c.create_line(x, marge_haut, x, hauteur - marge_bas, fill="#eef0ef")
+            c.create_text(x, hauteur - 2, text=etiquette, font=("Segoe UI", 7),
+                           fill="#999999", anchor="s")
+
+        for i, (poste_id, titre, nb_conf, nb_total, score) in enumerate(scores):
+            y_centre = marge_haut + pas * i + pas / 2
+            y0 = y_centre - hauteur_barre / 2
+            y1 = y_centre + hauteur_barre / 2
+            x0 = marge_gauche
+            largeur_dispo = largeur - marge_gauche - marge_droite
+
+            if score >= 0.8:
+                couleur = COULEUR_OK
+            elif score >= 0.5:
+                couleur = COULEUR_ATTENTION
+            else:
+                couleur = COULEUR_CRITIQUE
+
+            x1 = x0 + largeur_dispo * score
+            c.create_rectangle(x0, y0, largeur - marge_droite, y1, fill="#f0f1f0",
+                                outline="")
+            c.create_rectangle(x0, y0, x1, y1, fill=couleur, outline="")
+            c.create_text(
+                marge_gauche - 4, y_centre, text=poste_id, font=("Segoe UI", 8, "bold"),
+                anchor="e", fill="#444444"
+            )
+            c.create_text(
+                x1 + 4 if x1 + 30 < largeur - marge_droite else x1 - 4,
+                y_centre, text=f"{round(score * 100)}%", font=("Segoe UI", 7),
+                anchor="w" if x1 + 30 < largeur - marge_droite else "e",
+                fill="#444444"
+            )
+
+    def _afficher_alertes(self, releves):
+        alertes = analyse.generer_alertes(releves)
+        self.texte_alertes.configure(state="normal")
+        self.texte_alertes.delete("1.0", "end")
+        for i, a in enumerate(alertes):
+            if i > 0:
+                self.texte_alertes.insert("end", "\n\n")
+            icone = analyse.NIVEAU_ICONE.get(a["niveau"], "•")
+            self.texte_alertes.insert("end", f"{icone} ", a["niveau"])
+            self.texte_alertes.insert("end", a["texte"], "corps")
+        self.texte_alertes.configure(state="disabled")
 
     def _maj_parametres(self):
         poste_id = self.poste_var.get().split(" — ")[0]
@@ -208,3 +384,4 @@ class OngletReleves(ttk.Frame):
                 values=(r["horodatage"], r["poste_titre"], r["parametre"], r["valeur"],
                         r["unite"] or "", texte_conformite, r["nom_complet"])
             )
+        self._rafraichir_analyse()
